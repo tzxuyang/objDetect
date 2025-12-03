@@ -1,11 +1,12 @@
 # Object detection tool
+This repo is used to do customized object detection, while leveraging pretrained model capability
 
-# Tutorials
+## Tutorials
 Under examples folder, there are tutorials to use qwen and a pretrained yolo model to detect objects in an image, generating class and bounding box
 * object_detect_yolo.ipynb: use a pretrained yolo model ("hustvl/yolos-tiny") to detect objects
 * object_detection_qwen.ipynb: use Qwen VLM model to detect objects in an image
 
-# Customed object detection model
+## Customed object detection model
 The customed object detection model create a pipeline, where a Qwen pretrained model is used to auto-label images.
 The autolabel results are stored in a specified dir path in a format used by YOLO lib
 Then the yolo8n model architecture is selected and trained with auto-labeled dataset
