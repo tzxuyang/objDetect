@@ -8,6 +8,8 @@ import json
 import logging
 from retrying import retry
 import matplotlib.pyplot as plt
+import torch
+from torch.utils.data import Dataset, DataLoader
 from transformers import Qwen3VLForConditionalGeneration, AutoTokenizer, AutoProcessor
 import utils
 
@@ -15,7 +17,7 @@ logging.basicConfig(level=logging.INFO)
 
 _MODEL_PATH = "Qwen/Qwen3-VL-4B-Instruct"
 
-class ObjectDetector:
+class AiLabeler:
     def __init__(self, model_path=_MODEL_PATH):
         self.model = Qwen3VLForConditionalGeneration.from_pretrained(model_path, dtype=torch.bfloat16, device_map="auto")
         self.processor = AutoProcessor.from_pretrained(model_path)
@@ -76,6 +78,45 @@ class ObjectDetector:
         
         return output_text
     
+    def classify_image(self, image_path, prompt = "Please describe this image", max_new_tokens=1024):
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": image_path,
+                    },
+                    {
+                        "type": "text", 
+                        "text": f"{prompt}"
+                    },
+                ],
+            }
+        ]
+
+        # Preparation for inference
+        inputs = self.processor.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=True,
+            return_dict=True,
+            return_tensors="pt"
+        )
+        inputs = inputs.to(self.model.device)
+        
+        # Inference: Generation of the output
+        generated_ids = self.model.generate(**inputs, max_new_tokens=max_new_tokens)
+        # The generated_ids includes the inputs.input_ids prompt. Need to remove the prompt to get output
+        generated_ids_trimmed = [
+            out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        output_text = self.processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+        
+        return output_text
+    
     def extract_bbox(self, label_results):
         # Extract JSON content from the output text
         output_json = json.loads(label_results[0])
@@ -93,6 +134,13 @@ class ObjectDetector:
             bboxs.append(bbox)
         
         return bboxs, labels
+    
+    def extract_classification(self, classification_result):
+        output_json = json.loads(classification_result[0])
+        plugin = output_json["Is plugged in"]
+        connected_port = output_json["connected to port (int)"]
+
+        return plugin, connected_port
 
 class CreateYoloDataset:
     def __init__(self, label_dict):
@@ -115,8 +163,23 @@ class CreateYoloDataset:
             except IOError as e:
                 print(f"Error writing to file '{file_name}': {e}")
 
+class CreateClassDataset:
+    def __init__(self):
+        pass
+
+    def create_classification_label(self, plugin, classification_result, file_name):
+        if plugin == False:
+            label_idx = '0'
+        else:
+            label_idx = f"{classification_result}"
+        try:
+            with open(file_name, 'w', encoding='utf-8') as file:
+                file.write(label_idx)
+        except IOError as e:
+            print(f"Error writing to file '{file_name}': {e}")
+
 @retry(stop_max_attempt_number=5, wait_fixed=100)
-def autolabel(Labeler, Yolodataset, path, file_name, prompt, max_new_tokens=2048):
+def yolo_autolabel(Labeler, Yolodataset, path, file_name, prompt, max_new_tokens=2048):
     result = Labeler.detect_object(path, prompt, max_new_tokens=max_new_tokens)
     try:
         bboxs, labels = Labeler.extract_bbox(result)
@@ -131,8 +194,23 @@ def autolabel(Labeler, Yolodataset, path, file_name, prompt, max_new_tokens=2048
     
     return result, bboxs, labels
 
+@retry(stop_max_attempt_number=5, wait_fixed=100)
+def classification_autolabel(Labeler, Classdataset, path, file_name, prompt, max_new_tokens=2048):
+    result = Labeler.classify_image(path, prompt, max_new_tokens=max_new_tokens)
+    try:
+        plugin, connected_port = Labeler.extract_classification(result)
+        Classdataset.create_classification_label(
+            plugin, 
+            connected_port,
+            file_name
+        )
+    except:
+        raise Exception("Inference error")
+    
+    return result, plugin, connected_port
+
 if __name__ == "__main__":
-    ObjDetectLabeler = ObjectDetector(_MODEL_PATH)
+    ObjDetectLabeler = AiLabeler(_MODEL_PATH)
     CreateYoloLabel = CreateYoloDataset({"circular port": 0, "rectangular port": 1})
 
     # create train data set
@@ -143,7 +221,7 @@ if __name__ == "__main__":
     for path in path_list:
         file_name = path.replace(root_dir, trgt_dir).replace(".jpg", ".txt")
         logging.info(f"Processing image: {path}")
-        result, bboxs, labels = autolabel(ObjDetectLabeler, CreateYoloLabel, path, file_name, "circular ports on the white board", max_new_tokens=2048)
+        result, bboxs, labels = yolo_autolabel(ObjDetectLabeler, CreateYoloLabel, path, file_name, "circular ports on the white board", max_new_tokens=2048)
         utils.draw_bbox(
             path,
             bboxs[:],
@@ -160,7 +238,7 @@ if __name__ == "__main__":
     for path in path_list:
         file_name = path.replace(root_dir, trgt_dir).replace(".jpg", ".txt")
         logging.info(f"Processing image: {path}")
-        result, bboxs, labels = autolabel(ObjDetectLabeler, CreateYoloLabel, path, file_name, "circular ports on the white board", max_new_tokens=2048)
+        result, bboxs, labels = yolo_autolabel(ObjDetectLabeler, CreateYoloLabel, path, file_name, "circular ports on the white board", max_new_tokens=2048)
         utils.draw_bbox(
             path,
             bboxs[:],

@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 from dataclasses import dataclass
 from src.utils import draw_bbox, create_file_list
 from src.yolo_train import YOLOCustom
-from src.auto_labeling import ObjectDetector, CreateYoloDataset, autolabel
+from src.auto_labeling import AiLabeler, CreateYoloDataset, yolo_autolabel
 
 # auto label model path
 _MODEL_PATH = "Qwen/Qwen3-VL-4B-Instruct"
@@ -57,7 +57,7 @@ if __name__ == "__main__":
         )
         plt.show()
     elif config.mode == "autolabel":
-        ObjDetectLabeler = ObjectDetector(_MODEL_PATH)
+        ObjDetectLabeler = AiLabeler(_MODEL_PATH)
         CreateYoloLabel = CreateYoloDataset({"circular port": 0, "rectangular port": 1})
 
         # create train data set
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         for i, path in enumerate(path_list):
             file_name = path.replace(root_dir, trgt_dir).replace(".jpg", ".txt")
             logging.info(f"Processing image: {path}")
-            result, bboxs, labels = autolabel(ObjDetectLabeler, CreateYoloLabel, path, file_name, "circular ports on the white board", max_new_tokens=2048)
+            result, bboxs, labels = yolo_autolabel(ObjDetectLabeler, CreateYoloLabel, path, file_name, "circular ports on the white board", max_new_tokens=2048)
             if i % 5 == 0 and i < 50:
                 draw_bbox(
                     path,
@@ -86,7 +86,7 @@ if __name__ == "__main__":
         for i, path in enumerate(path_list):
             file_name = path.replace(root_dir, trgt_dir).replace(".jpg", ".txt")
             logging.info(f"Processing image: {path}")
-            result, bboxs, labels = autolabel(ObjDetectLabeler, CreateYoloLabel, path, file_name, "circular ports on the white board", max_new_tokens=2048)
+            result, bboxs, labels = yolo_autolabel(ObjDetectLabeler, CreateYoloLabel, path, file_name, "circular ports on the white board", max_new_tokens=2048)
             if i % 2 ==0 and i < 50:
                 draw_bbox(
                     path,

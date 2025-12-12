@@ -36,6 +36,26 @@ def process_image(path):
 
     return img
 
+# register_heif_opener()
+def convert_heic_to_jpeg(heic_path, jpeg_path):
+    try:
+        # Open the HEIC image
+        img = Image.open(heic_path)
+
+        # Convert to RGB mode if necessary
+        if img.mode in ("RGBA", "P"):
+            img = img.convert("RGB")
+        
+        img = img.resize((640, 480))
+        
+        # Save the image in JPEG format
+        img.save(jpeg_path, "JPEG", quality=95)
+
+        print(f"Successfully converted {heic_path} to {jpeg_path}")
+
+    except Exception as e:
+        print(f"Error converting {heic_path}: {e}")
+
 def draw_bbox(image_path, bboxs, labels, new_size = (1000, 600)):
     if image_path.startswith("http"):
         response = requests.get(image_path)
