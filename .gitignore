@@ -1,2 +1,5 @@
 /runs/detect
 !/runs/detect/.gitkeep
+
+/runs/cls
+!/runs/cls/.gitkeep
