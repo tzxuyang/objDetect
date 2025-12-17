@@ -28,7 +28,7 @@ python yolo_detect.py --mode train --dataset ./data_configs/port0.yaml
 ```
 python yolo_detect.py --mode predict --image ./images/circular_port_22.jpg --checkpoint ./runs/detect/train/weights/best.pt
 ```
----
+
 # DinoV3 classification tool
 ---
 This tool does customized classification task. It is built upon a dinov3 (20M parameter) ViT backbone. It also leverages Qwen3-4B/Qwen3-8B pretrained model to do auto-labeling and train the dinov3-classifier with the autobabeled image-label pairs.
@@ -60,4 +60,3 @@ The trained checkpoint will be saved in /runs/
 ```
 python status_classifier.py --mode predict --checkpoint ./checkpoints/dino_classifier.pth --image ./images/port_2.jpg
 ```
----
