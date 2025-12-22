@@ -7,12 +7,15 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts
 import torch  # torch
 import utils
-from PIL import Image
+from PIL import Image, ImageOps
 import logging
 from sklearn.metrics import classification_report, accuracy_score
 import os
 import wandb
 import random
+import numpy as np
+from sklearn import linear_model
+import pickle
 
 logging.basicConfig(level=logging.INFO)
 
@@ -74,13 +77,15 @@ class DinoClassifier(nn.Module):
     def forward(self, x):
         features = self.backbone(x)
         output = self.head(features)
-        return output
+        return output, features
     
     def get_train_transform(self):
         data_config = timm.data.resolve_model_data_config(self.backbone) 
         transform = timm.data.create_transform(
             **data_config,
-            is_training=False
+            is_training=False,
+            # no_aug=False,
+            # color_jitter=0.4,
         )
         return transform
     
@@ -98,8 +103,7 @@ class DinoClassifier(nn.Module):
         total_size = backbone_size + head_size
         return self.backbone.num_features, self.num_classes, total_size
     
-    def process_image(self, file_path):
-        data_config = timm.data.resolve_model_data_config(self.backbone) 
+    def process_image(self, data_config, file_path, new_size = None):
         transforms = timm.data.create_transform(
             **data_config,
             is_training=False
@@ -108,17 +112,28 @@ class DinoClassifier(nn.Module):
             image = Image.open(file_path).convert('RGB')
         else:
             image = file_path.convert('RGB')
+        if new_size is not None:
+            origin_size = image.size
+            ratio_min = min(new_size[0]/origin_size[0], new_size[1]/origin_size[1])
+            resized_size = (int(origin_size[0]*ratio_min), int(origin_size[1]*ratio_min))
+            padding_left = (new_size[0] - resized_size[0]) //2
+            padding_top = (new_size[1] - resized_size[1]) //2
+            padding_right = new_size[0] - resized_size[0] - padding_left
+            padding_bottom = new_size[1] - resized_size[1] - padding_top
+            image = image.resize(resized_size)
+            image = ImageOps.expand(image, border=(padding_left, padding_top, padding_right, padding_bottom), fill='black')
         input_tensor = transforms(image).unsqueeze(0).to(device)
         return input_tensor
     
-    def predict(self, input_tensor, class_names=None):
+    def predict(self, input_tensor, return_feature = False, class_names=None):
         with torch.no_grad():
-            output = self.forward(input_tensor)
+            output, features = self.forward(input_tensor)
             prob = torch.softmax(output, dim=1)
             confidence, predicted = torch.max(prob, 1)
-        class_names = class_names
-        # logging.info(f"Predicted: {class_names[predicted.item()]}, Confidence: {confidence.item():.4f}")
-        return class_names[predicted.item()], confidence.item()
+        if return_feature:
+            return class_names[predicted.item()], confidence.item(), features
+        else:
+            return class_names[predicted.item()], confidence.item()
     
     def save_model(self, file_path):
         torch.save(self.state_dict(), file_path)
@@ -131,7 +146,7 @@ class CustomDataset(Dataset):
         self.labels = labels # Use torch.long for classification labels
 
     @classmethod
-    def fromDirectory(cls, data_dir, label_dir, transform=None, scale = 1):
+    def fromDirectory(cls, data_dir, label_dir, transform=None, resize = None, scale = 1):
         # Load data and labels from a directory
         file_list = utils.create_file_list(data_dir)
         data = []
@@ -139,7 +154,18 @@ class CustomDataset(Dataset):
         for _ in range(scale):
             for file in file_list:
                 # Load data and labels
-                data.append(Image.open(file).convert('RGB'))
+                img = Image.open(file).convert('RGB')
+                if resize is not None:
+                    origin_size = img.size
+                    ratio_min = min(resize[0]/origin_size[0], resize[1]/origin_size[1])
+                    resized_size = (int(origin_size[0]*ratio_min), int(origin_size[1]*ratio_min))
+                    padding_left = (resize[0] - resized_size[0]) //2
+                    padding_top = (resize[1] - resized_size[1]) //2
+                    padding_right = resize[0] - resized_size[0] - padding_left
+                    padding_bottom = resize[1] - resized_size[1] - padding_top
+                    img = img.resize(resized_size)
+                    img = ImageOps.expand(img, border=(padding_left, padding_top, padding_right, padding_bottom), fill='black')
+                data.append(img)
                 label_file = file.replace(data_dir, label_dir).replace('.jpg', '.txt')
                 with open(label_file, 'r') as f:
                     label = int(f.read().strip())
@@ -191,7 +217,7 @@ def train_model(custom_model, train_loader, val_loader, **kwargs):
         for images, labels in train_loader:
             images, labels = images.to(device), labels.to(device)
             optimizer.zero_grad()
-            outputs = custom_model(images)
+            outputs, _ = custom_model(images)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -203,7 +229,7 @@ def train_model(custom_model, train_loader, val_loader, **kwargs):
         with torch.no_grad():
             for images, labels in val_loader:
                 images, labels = images.to(device), labels.to(device)
-                outputs = custom_model(images)
+                outputs, _ = custom_model(images)
                 loss = criterion(outputs, labels)
                 running_loss += loss.item()
         running_loss_val = running_loss / len(val_loader)
@@ -226,7 +252,7 @@ def test_model(custom_model, test_loader, class_names):
     with torch.no_grad():
         for images, labels in test_loader:
             images = images.to(device)
-            outputs = custom_model(images)
+            outputs, _ = custom_model(images)
             _, predicted = torch.max(outputs.data, 1)
             all_preds.extend(predicted.cpu().numpy())
             all_labels.extend(labels.numpy())
@@ -235,7 +261,18 @@ def test_model(custom_model, test_loader, class_names):
     logging.info(f"Test Accuracy: {accuracy:.4f}")
     logging.info("Classification Report:\n" + report)
 
-def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, batch_size=_BATCH_SIZE, lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
+def extract_model_features(custom_model, test_loader):
+    custom_model.to(device)
+    custom_model.eval()  # set the model to evaluation mode
+    feature_list = []
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images = images.to(device)
+            _, feature = custom_model(images)
+            feature_list.append(feature.detach().cpu().numpy())
+    return feature_list
+
+def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, train_cluster =False, new_size = None, batch_size=_BATCH_SIZE, lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -258,16 +295,17 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
     train_dataset = CustomDataset.fromDirectory(
         train_file_directory, 
         train_label_directory,
-        transform= transforms
+        transform = transforms,
+        resize = new_size
     )
     transforms = custom_model.get_val_transform()
     val_dataset = CustomDataset.fromDirectory(
         test_file_directory, 
         test_label_directory,
-        transform = transforms
+        transform = transforms,
+        resize = new_size
     )
     logging.info(f"train_dataset size : {int(train_dataset.__len__())}")
-    sample, label = train_dataset.__getitem__(0)
 
     train_loader = DataLoader(
         train_dataset, 
@@ -291,10 +329,10 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
 
     # Save the trained model
     folders = os.listdir("./runs/cls")
-    print(len(folders))
+    logging.info(len(folders))
     if len(folders) > 1:
         folder_cnt = len(folders) -1
-        print(folder_cnt)
+        logging.info(folder_cnt)
         next_folder = f"train{folder_cnt}"
     else: #gitkeep
         next_folder = "train"
@@ -310,12 +348,12 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
 
     # inference on val dataset
     trained_model.eval()
+    data_config = timm.data.resolve_model_data_config(trained_model.backbone)
     logging.info("--------------------------------------------------------------------------------------------------")
     val_dir = test_file_directory
     image_file_list = utils.create_file_list(val_dir)
     for image_path in image_file_list:
-        image = Image.open(image_path).convert('RGB')
-        input_tensor = trained_model.process_image(image_path)
+        input_tensor = trained_model.process_image(data_config, image_path, new_size=new_size).to(device)
         class_name, confidence = trained_model.predict(input_tensor, class_names=class_names)
         logging.info(f"{image_path} classified as {class_name} with confidence {confidence:.4f}")
 
@@ -325,7 +363,8 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
     train_dataset = CustomDataset.fromDirectory(
         train_file_directory, 
         train_label_directory,
-        transform= transforms
+        transform= transforms,
+        resize = new_size
     )
     test_loader = DataLoader(
         train_dataset, 
@@ -334,6 +373,12 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         num_workers=_NUM_WORKERS
     )
     test_model(trained_model, test_loader, class_names=class_names)
+    if train_cluster:
+        feature_list = extract_model_features(trained_model, test_loader)
+        features = np.array(feature_list)
+        print(features)
+        print(features.shape)
+        print(features[0])
 
     # evaluate on test dataset
     logging.info("**********************************************Test set report: **********************************************")
@@ -345,6 +390,14 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         num_workers=_NUM_WORKERS
     )
     test_model(trained_model, test_loader, class_names=class_names)
+
+    # Train Novelty detection model with SGDOneClassSVM
+    if train_cluster:
+        clf = linear_model.SGDOneClassSVM(random_state=_SEED, tol=None)
+        clf.fit(features[0])
+        path=f"./runs/cls/{next_folder}/weights/anormally_detect.pkl"
+        with open(path, 'wb') as file:
+            pickle.dump(clf, file)
 
 if __name__ == "__main__":
     train_file_directory = "/home/yang/MyRepos/tensorRT/datasets/port_cls/images/train"
@@ -358,6 +411,7 @@ if __name__ == "__main__":
         train_label_directory, 
         test_file_directory, 
         test_label_directory, 
+        new_size=None,
         class_names=['unplugged', 'port1', 'port2', 'port3', 'port4', 'port5'],
         batch_size=_BATCH_SIZE, 
         lr_max=_LR_init, 

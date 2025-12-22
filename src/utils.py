@@ -1,4 +1,5 @@
 import os
+import io
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from io import BytesIO
@@ -8,6 +9,9 @@ import re
 import transformers
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import numpy as np
+import cv2
+import logging
 
 def create_file_list(root_dir):
     dir_contents = os.listdir(root_dir)
@@ -37,7 +41,7 @@ def process_image(path):
     return img
 
 # register_heif_opener()
-def convert_heic_to_jpeg(heic_path, jpeg_path):
+def convert_heic_to_jpeg(heic_path, jpeg_path, img_size = (640, 480)):
     try:
         # Open the HEIC image
         img = Image.open(heic_path)
@@ -46,7 +50,7 @@ def convert_heic_to_jpeg(heic_path, jpeg_path):
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
         
-        img = img.resize((640, 480))
+        img = img.resize(img_size)
         
         # Save the image in JPEG format
         img.save(jpeg_path, "JPEG", quality=95)
@@ -55,6 +59,28 @@ def convert_heic_to_jpeg(heic_path, jpeg_path):
 
     except Exception as e:
         print(f"Error converting {heic_path}: {e}")
+
+def add_text_2_img(img, text, font_size=40, xy=(20, 20), color=(0, 0, 255)):
+    # 1. Create a drawing context
+    draw = ImageDraw.Draw(img)
+
+    # 2. Load a font (ensure 'arial.ttf' is available or use a full path)
+    try:
+        font = ImageFont.truetype("DejaVuSans-Bold.ttf", font_size)
+    except IOError:
+        font = ImageFont.load_default()
+        print("Using default font.")
+
+    # 3. Add text
+    draw.text(xy, text, fill=color, font=font) # Red color
+
+    # 4. convert to bytes
+    byte_io = io.BytesIO()
+    img.save(byte_io, format='JPEG')
+    jpeg_bytes = byte_io.getvalue()
+
+    # 4. Save the result
+    return jpeg_bytes
 
 def draw_bbox(image_path, bboxs, labels, new_size = (1000, 600)):
     if image_path.startswith("http"):
@@ -91,6 +117,31 @@ def draw_bbox(image_path, bboxs, labels, new_size = (1000, 600)):
 
     plt.axis('off')
     # plt.show()
+
+def record_video_from_images(df, image_col_name,  fps = 30, output_path = './videos/monitor_video.mp4'):    
+    frames = []
+    for img_bytes in df[image_col_name]:
+        # Use a library like OpenCV to decode the image bytes
+        img_buf = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(img_buf, cv2.IMREAD_COLOR) # Use IMREAD_COLOR for standard RGB
+        if img is not None:
+            frames.append(img)
+
+    height, width, layers = frames[0].shape
+    fps = fps # Desired frames per second
+    video_filename = output_path
+
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Codec for .mp4
+    out = cv2.VideoWriter(video_filename, fourcc, fps, (width, height))
+
+    # Write the frames to the video file
+    for frame in frames:
+        out.write(frame)
+
+    # Release the VideoWriter
+    out.release()
+    logging.info(f"Successfully created video: {video_filename}")
 
 if __name__ == "__main__":
     root_dir = "/home/yang/datasets/visual_image"

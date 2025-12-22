@@ -5,3 +5,7 @@
 !/runs/cls/.gitkeep
 
 /wandb
+
+/videos/*.mp4
+/videos/*.MOV
+/videos/*.parquet

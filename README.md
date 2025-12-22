@@ -58,5 +58,5 @@ The trained checkpoint will be saved in /runs/
 
 * Step 3: predict
 ```
-python status_classifier.py --mode predict --checkpoint ./checkpoints/dino_classifier.pth --image ./images/port_2.jpg
+python status_classifier.py --mode predict --checkpoint ./checkpoints/dino_classifier.pth --image ./images/port_2_001.jpg
 ```
