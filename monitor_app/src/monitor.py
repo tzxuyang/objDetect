@@ -165,6 +165,20 @@ class MonitorFSM:
     def _reset_timer(self):
         self.timer = 0
 
+def status_monitor(current_frame, monitor_fsm, anormally_fsm, dino_classifier, data_config, img_size, class_names, clf):
+    class_name, _, feature = vit_predict(dino_classifier, data_config, current_frame, img_size, class_names)
+    feature = feature.detach().cpu().numpy()
+    dist = clf.decision_function(feature)
+    detect = [1] if dist > _SVM_THRES else [-1]
+
+    status_candidate = _CLASS2INT[class_name]
+    monitor_fsm.transition(status_candidate)
+    status = monitor_fsm.state
+    duration = monitor_fsm.get_state_timer()    
+    anormally_fsm.trainsition(detect)
+    abnormal = anormally_fsm.state
+
+    return status, abnormal, status_candidate, detect, duration, dist
 
 if __name__ == "__main__":
     # python monitor_src/monitor.py --checkpoint ./checkpoints/dino_classifier.pth --image ./images/port_2.jpg
@@ -204,23 +218,17 @@ if __name__ == "__main__":
         # Here we assume the model can take bytes directly; otherwise, convert as needed
         class_name, confidence, feature = vit_predict(dino_classifier, data_config, image_path, img_size, train_config["class_names"])
 
+        status, abnormal, status_candidate, detect, duration, dist = status_monitor(
+            image_path, 
+            monitor_fsm, 
+            anormally_fsm, 
+            dino_classifier, 
+            data_config, 
+            img_size, 
+            train_config["class_names"], 
+            clf
+        )
 
-        feature = feature.detach().cpu().numpy()
-        # detect = clf.predict(feature)
-        dist = clf.decision_function(feature)
-        detect = [1] if dist > _SVM_THRES else [-1]
-
-
-        status_candidate = _CLASS2INT[class_name]
-
-        monitor_fsm.transition(status_candidate)
-        status = monitor_fsm.state
-        status_lst = monitor_fsm.state_lst
-        duration = monitor_fsm.get_state_timer()
-
-        anormally_fsm.trainsition(detect)
-        abnormal = anormally_fsm.state
-     
         status_text = _INT2CLASS[status]
         duration_text = f"{duration:.2f} sec in current state"
 

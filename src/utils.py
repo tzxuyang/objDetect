@@ -3,7 +3,6 @@ import io
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from io import BytesIO
-from bs4 import BeautifulSoup, Tag
 from pathlib import Path
 import re
 import transformers

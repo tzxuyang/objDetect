@@ -1,0 +1,27 @@
+numpy==2.2.6
+pillow==12.0.0
+requests
+torch
+torchvision=0.20.1
+torchaudio=2.5.1
+# conda install pytorch torchvision torchaudio
+transformers
+# pip install git+https://github.com/huggingface/transformers.git
+matplotlib
+opencv-python
+tyro
+ultralytics
+retrying
+accelerate
+pillow_heif
+timm
+scikit-learn
+wandb
+pytz
+jsons
+pyparsing
+cycler
+pip install kiwisolver
+
+$ locate libtiff.so
+# export LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libtiff.so.5
