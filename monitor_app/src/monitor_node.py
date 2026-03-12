@@ -42,11 +42,12 @@ def read_config(config_path):
     duration_threshold = monitor_config.get("duration_thres")
     class_names = monitor_config.get("class_names")
     fsm = monitor_config.get("fsm")
+    fsm_thres = monitor_config.get("svm_thres")
     img_size = monitor_config.get("image_size")
-    return duration_threshold, class_names, fsm, img_size
+    return duration_threshold, class_names, fsm, img_size, fsm_thres
 
 class MonitorNode(Node):
-    def __init__(self, duration_threshold, class_names, fsm, img_size):
+    def __init__(self, duration_threshold, class_names, fsm, img_size, fsm_thres):
         super().__init__('monitor_node')
         self.subscription = self.create_subscription(
             Image,
@@ -61,6 +62,7 @@ class MonitorNode(Node):
         self.class_names = class_names
         self.int2class = {idx: name for idx, name in enumerate(class_names)}
         self.fsm = fsm
+        self.fsm_thres = fsm_thres
         self.current_frame = None
         self.monitor_warning = False
         self.error_description = ""
@@ -148,7 +150,8 @@ class MonitorNode(Node):
             status, abnormal, _, _, duration, dist = status_monitor(
                 image_path, 
                 monitor_fsm, 
-                anormally_fsm, 
+                anormally_fsm,
+                self.fsm_thres, 
                 dino_classifier, 
                 data_config, 
                 self.img_size, 
@@ -171,9 +174,9 @@ class MonitorNode(Node):
             time.sleep(0.01)
 
 def main(cfg: Config)-> None:
-    duration_thres, class_names, fsm, img_size = read_config(cfg.config_path)
+    duration_thres, class_names, fsm, img_size, fsm_thres = read_config(cfg.config_path)
     rclpy.init(args=None)
-    monitor_node = MonitorNode(duration_thres, class_names, fsm, img_size)
+    monitor_node = MonitorNode(duration_thres, class_names, fsm, img_size, fsm_thres)
     try:
         monitor_node.run()
     except KeyboardInterrupt:

@@ -3,7 +3,7 @@ import timm
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from torch.optim.lr_scheduler import CosineAnnealingLR, CosineAnnealingWarmRestarts
 import torch  # torch
 import utils
@@ -306,6 +306,12 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         resize = new_size
     )
     logging.info(f"train_dataset size : {int(train_dataset.__len__())}")
+
+    # Assign higher weight to class 0
+    sample_weights = [1, 1, 2]
+
+    # Create sampler
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(train_dataset), replacement=True)
 
     train_loader = DataLoader(
         train_dataset, 

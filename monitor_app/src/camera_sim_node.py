@@ -71,6 +71,6 @@ def main(cfg: Config)-> None:
         rclpy.shutdown()
 
 if __name__ == '__main__':
-   # python monitor_app/src/camera_sim_node.py --config data_configs/monitor_config_port.json
-   # python monitor_app/src/camera_sim_node.py --config data_configs/monitor_config_pnp.json
+   # python monitor_app/src/camera_sim_node.py --config-path data_configs/monitor_config_port.json
+   # python monitor_app/src/camera_sim_node.py --config-path data_configs/monitor_config_pnp.json
    main(tyro.cli(Config))
