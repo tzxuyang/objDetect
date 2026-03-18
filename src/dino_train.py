@@ -307,12 +307,6 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
     )
     logging.info(f"train_dataset size : {int(train_dataset.__len__())}")
 
-    # Assign higher weight to class 0
-    sample_weights = [1, 1, 2]
-
-    # Create sampler
-    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(train_dataset), replacement=True)
-
     train_loader = DataLoader(
         train_dataset, 
         batch_size=batch_size, 

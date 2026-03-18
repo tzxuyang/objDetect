@@ -134,7 +134,6 @@ class MonitorNode(Node):
         with open("./checkpoints/anormally_detect.pkl", 'rb') as file:
             clf = pickle.load(file)
 
-        print(self.fsm)
         if self.fsm == "MonitorFSM":
             monitor_fsm = MonitorFSM(filter_time=_FILTER_TIME, fps=_FPS)
         elif self.fsm == "PnpMonitorFSM":

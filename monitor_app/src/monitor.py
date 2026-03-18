@@ -1,3 +1,4 @@
+from hmac import new
 import sys
 import os
 
@@ -33,6 +34,7 @@ class ClassifierConfig:
 def load_model(checkpoint, class_names):
     dino_classifier = DinoClassifier(num_classes=len(class_names))
     data_config = timm.data.resolve_model_data_config(dino_classifier.backbone)
+    print(data_config)
     dino_classifier.load_state_dict(torch.load(checkpoint))
     dino_classifier.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     dino_classifier.eval()
@@ -232,11 +234,11 @@ def status_monitor(current_frame, monitor_fsm, anormally_fsm, svm_thres, dino_cl
 if __name__ == "__main__":
     # python monitor_app/src/monitor.py --checkpoint ./checkpoints/dino_classifier.pth --image ./images/port_2.jpg
     train_config = json.load(open("data_configs/train_config_port.json", "r"))
+    img_size = (train_config["image_size"][0], train_config["image_size"][1])
     dino_classifier, data_config = load_model('./checkpoints/dino_classifier.pth', train_config["class_names"])
     with open("./checkpoints/anormally_detect.pkl", 'rb') as file:
         clf = pickle.load(file)
     
-    img_size = (train_config["image_size"][0], train_config["image_size"][1])
     set_seed(_SEED)
     # predict(config.checkpoint, config.image, train_config["class_names"])
 
