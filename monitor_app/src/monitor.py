@@ -9,6 +9,7 @@ project_root = os.path.dirname(os.path.dirname(project_root))
 sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'src'))
 
+from cv2 import data
 import timm
 import logging
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ import pandas as pd
 import io
 import time
 import pickle
-from utils import add_text_2_img, record_video_from_images
+from utils import add_text_2_img, record_video_from_images, pad_vit_input
 from PIL import Image
 
 # _PROJECT_NAME = "dino_classifier_177_dino_large"
@@ -34,13 +35,14 @@ class ClassifierConfig:
 def load_model(checkpoint, class_names):
     dino_classifier = DinoClassifier(num_classes=len(class_names))
     data_config = timm.data.resolve_model_data_config(dino_classifier.backbone)
-    print(data_config)
     dino_classifier.load_state_dict(torch.load(checkpoint))
     dino_classifier.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     dino_classifier.eval()
     return dino_classifier, data_config
 
 def vit_predict(model, data_config, image_path, new_size, class_names):
+    img_size = (image_path.size[0], image_path.size[1])
+    image_path = pad_vit_input(image_path, bbox=[int(img_size[0]*0.2), int(img_size[1]/2), int(img_size[0]*0.8), img_size[1]], target_size=new_size)
     input_tensor = model.process_image(data_config, image_path, new_size).to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
 
     with torch.no_grad():
@@ -267,6 +269,7 @@ if __name__ == "__main__":
         image_path = Image.open(image_stream)
         # Convert bytes back to image array if necessary
         # Here we assume the model can take bytes directly; otherwise, convert as needed
+        # image_path = pad_vit_input(image_path, bbox=[int(img_size[0]*0.2), int(img_size[1]/2), int(img_size[0]*0.8), img_size[1]], target_size=img_size)
         class_name, confidence, feature = vit_predict(dino_classifier, data_config, image_path, img_size, train_config["class_names"])
 
         status, abnormal, status_candidate, detect, duration, dist = status_monitor(

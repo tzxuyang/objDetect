@@ -90,6 +90,7 @@ if __name__ == "__main__":
 
     fig, axs = plt.subplots(1, 2, figsize=(16, 16))
     for i, (k, v) in enumerate(out.items()):
+        # if i == num_layers - 1:
         if i == num_layers - 1:
             attn_scores = v.squeeze()
             attn_scores_mean = attn_scores.mean(dim=0)

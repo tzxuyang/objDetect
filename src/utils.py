@@ -1,6 +1,6 @@
 import os
 import io
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 import requests
 from io import BytesIO
 from pathlib import Path
@@ -11,6 +11,7 @@ import matplotlib.patches as patches
 import numpy as np
 import cv2
 import logging
+import torch.nn.functional as F
 
 def create_file_list(root_dir):
     dir_contents = os.listdir(root_dir)
@@ -38,6 +39,39 @@ def process_image(path):
     print(f"Image size: {img.size}")
 
     return img
+
+def pad_vit_input(img, bbox, target_size=(224, 224)):
+    """
+    Crops image to bbox, adds padding to make it square, and resizes.
+    bbox format: [x_min, y_min, x_max, y_max]
+    """
+    width, height = img.size
+    
+    # 1. Unpack and clamp bbox to image boundaries
+    x_min, y_min, x_max, y_max = bbox
+    x_min = max(0, int(x_min))
+    y_min = max(0, int(y_min))
+    x_max = min(width, int(x_max))
+    y_max = min(height, int(y_max))
+    
+    # 2. Crop
+    cropped_img = img.crop((x_min, y_min, x_max, y_max))
+    
+    # 3. Calculate Padding to change it to original size
+    padding_l = max(0, x_min)
+    padding_t = max(0, y_min)
+    padding_r = max(0, width - x_max)
+    padding_b = max(0, height - y_max)
+    
+    # 4. Apply Padding (Fill with 0, 128, or mean color)
+    # Define padding: (left, top, right, bottom)
+    padding = (padding_l, padding_t, padding_r, padding_b) 
+    padded_img = ImageOps.expand(cropped_img, padding, fill='black')
+
+    # 5. Resize to ViT input size
+    # final_img = padded_img.resize(target_size, resample=Image.BICUBIC)
+    
+    return padded_img
 
 # register_heif_opener()
 def convert_heic_to_jpeg(heic_path, jpeg_path, img_size = (640, 480)):
