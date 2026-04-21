@@ -5,9 +5,10 @@
     "val_label":  "/home/yang/MyRepos/tensorRT/datasets/pick_n_place_w1/labels/val",
     "num_classes": 3,
     "image_size": [640, 480],
+    "padding_bbox": [128, 240, 512, 480],
     "class_names": ["ungrabbed", "grabbed_success", "grabbed_fail"],
     "batch_size": 1024,
     "lr_max": 0.0006,
     "lr_min": 0.0001,
-    "epoch": 150
+    "epoch": 120
 }

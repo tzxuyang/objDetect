@@ -146,7 +146,7 @@ class CustomDataset(Dataset):
         self.labels = labels # Use torch.long for classification labels
 
     @classmethod
-    def fromDirectory(cls, data_dir, label_dir, transform=None, resize = None, scale = 1):
+    def fromDirectory(cls, data_dir, label_dir, transform=None, resize = None, padding_size = (0,0,0,0), scale = 1):
         # Load data and labels from a directory
         file_list = utils.create_file_list(data_dir)
         data = []
@@ -165,11 +165,14 @@ class CustomDataset(Dataset):
                     padding_bottom = resize[1] - resized_size[1] - padding_top
                     img = img.resize(resized_size)
                     img = ImageOps.expand(img, border=(padding_left, padding_top, padding_right, padding_bottom), fill='black')
-                data.append(img)
+                if padding_size != (0,0,0,0):
+                    img = utils.pad_vit_input(img, bbox=padding_size)
+                    img.show()
                 label_file = file.replace(data_dir, label_dir).replace('.jpg', '.txt')
                 with open(label_file, 'r') as f:
                     label = int(f.read().strip())
-                    labels.append(label)
+                data.append(img)    
+                labels.append(label)
         if transform:
             data = [transform(img) for img in data]
         return cls(data, labels)
@@ -272,7 +275,7 @@ def extract_model_features(custom_model, test_loader):
             feature_list.append(feature.detach().cpu().numpy())
     return feature_list
 
-def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, train_cluster =False, new_size = None, batch_size=_BATCH_SIZE, lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
+def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, train_cluster =False, new_size = None, batch_size=_BATCH_SIZE, padding_bbox=(0,0,0,0), lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -296,14 +299,16 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         train_file_directory, 
         train_label_directory,
         transform = transforms,
-        resize = new_size
+        resize = new_size,
+        padding_size = padding_bbox,
     )
     transforms = custom_model.get_val_transform()
     val_dataset = CustomDataset.fromDirectory(
         test_file_directory, 
         test_label_directory,
         transform = transforms,
-        resize = new_size
+        resize = new_size,
+        padding_size = padding_bbox,
     )
     logging.info(f"train_dataset size : {int(train_dataset.__len__())}")
 
@@ -360,12 +365,6 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
     # evaluate on test dataset
     logging.info("*********************************************Train set report: *********************************************")
     transforms = custom_model.get_val_transform()
-    train_dataset = CustomDataset.fromDirectory(
-        train_file_directory, 
-        train_label_directory,
-        transform= transforms,
-        resize = new_size
-    )
     test_loader = DataLoader(
         train_dataset, 
         batch_size=len(train_dataset), 

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from math import e
+
+from rich import padding
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
@@ -44,10 +46,11 @@ def read_config(config_path):
     fsm = monitor_config.get("fsm")
     fsm_thres = monitor_config.get("svm_thres")
     img_size = monitor_config.get("image_size")
-    return duration_threshold, class_names, fsm, img_size, fsm_thres
+    padding_bbox = monitor_config.get("padding_bbox")
+    return duration_threshold, class_names, fsm, img_size, fsm_thres, padding_bbox
 
 class MonitorNode(Node):
-    def __init__(self, duration_threshold, class_names, fsm, img_size, fsm_thres):
+    def __init__(self, duration_threshold, class_names, fsm, img_size, fsm_thres, padding_bbox):
         super().__init__('monitor_node')
         self.subscription = self.create_subscription(
             Image,
@@ -63,6 +66,7 @@ class MonitorNode(Node):
         self.int2class = {idx: name for idx, name in enumerate(class_names)}
         self.fsm = fsm
         self.fsm_thres = fsm_thres
+        self.padding_bbox = padding_bbox
         self.current_frame = None
         self.monitor_warning = False
         self.error_description = ""
@@ -154,7 +158,8 @@ class MonitorNode(Node):
                 dino_classifier, 
                 data_config, 
                 self.img_size, 
-                self.class_names, 
+                self.class_names,
+                self.padding_bbox,
                 clf
             )
 
@@ -173,9 +178,10 @@ class MonitorNode(Node):
             time.sleep(0.01)
 
 def main(cfg: Config)-> None:
-    duration_thres, class_names, fsm, img_size, fsm_thres = read_config(cfg.config_path)
+    duration_thres, class_names, fsm, img_size, fsm_thres, padding_bbox = read_config(cfg.config_path)
+    padding_bbox = (padding_bbox[0], padding_bbox[1], padding_bbox[2], padding_bbox[3])
     rclpy.init(args=None)
-    monitor_node = MonitorNode(duration_thres, class_names, fsm, img_size, fsm_thres)
+    monitor_node = MonitorNode(duration_thres, class_names, fsm, img_size, fsm_thres, padding_bbox)
     try:
         monitor_node.run()
     except KeyboardInterrupt:

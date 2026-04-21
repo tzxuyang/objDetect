@@ -1,8 +1,10 @@
 {
     "video_path": "/home/yang/MyRepos/object_detection/videos/episode6.mp4",
     "image_size": [424, 240],
+    "padding_bbox": [0, 0, 0, 0],
     "class_names": ["unplugged", "port_1", "port_2", "port_3", "port_4", "port_5"],
     "svm_thres": -0.55,
     "fsm": "MonitorFSM",
+    "train_config_path": "/home/yang/MyRepos/object_detection/data_configs/train_config_port.json",
     "duration_thres": 6.5
 }

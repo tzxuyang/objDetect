@@ -1,4 +1,3 @@
-from hmac import new
 import sys
 import os
 import timm
@@ -7,11 +6,14 @@ import timm
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '.')) 
 sys.path.insert(0, os.path.join(project_root, 'src'))
 
+from timm.models import checkpoint
 import tyro 
 import logging
+from PIL import Image
 from dataclasses import dataclass, field, fields, MISSING
-from src.auto_labeling import classifier_autolabel_complex, classifier_autolabel, create_video, batch_label
+from src.auto_labeling import classifier_autolabel_complex, create_video, batch_label
 from src.dino_train import DinoClassifier, set_seed, train_classifier
+from src.utils import pad_vit_input
 import json
 import pickle
 import torch
@@ -128,6 +130,7 @@ if __name__ == "__main__":
     # python status_classifier.py --mode train --train_config data_configs/train_config_pnp.json --project_name dino_classifier_177_dinov3_small
         train_config = json.load(open(config.train_config, "r"))
         img_size = (train_config["image_size"][0], train_config["image_size"][1])
+        padding_bbox = (train_config["padding_bbox"][0], train_config["padding_bbox"][1], train_config["padding_bbox"][2], train_config["padding_bbox"][3])
         train_classifier(
             project_name=config.project_name,
             train_file_directory=train_config["train_image"],
@@ -136,6 +139,7 @@ if __name__ == "__main__":
             test_label_directory=train_config["val_label"],
             train_cluster=True,
             new_size=img_size,
+            padding_bbox=padding_bbox,
             class_names=train_config["class_names"],
             batch_size=train_config["batch_size"],
             lr_max=train_config["lr_max"],
@@ -150,7 +154,12 @@ if __name__ == "__main__":
         with open("./checkpoints/anormally_detect.pkl", 'rb') as file:
             clf = pickle.load(file)
         img_size = (train_config["image_size"][0], train_config["image_size"][1])
-        class_name, confidence, feature = predict(config.checkpoint, config.image, img_size, train_config["class_names"])
+        padding_bbox = (train_config["padding_bbox"][0], train_config["padding_bbox"][1], train_config["padding_bbox"][2], train_config["padding_bbox"][3])
+        image = Image.open(config.image).convert("RGB")
+        if padding_bbox != (0, 0, 0, 0):
+            image = pad_vit_input(image, bbox=padding_bbox)
+        image.show()
+        class_name, confidence, feature = predict(config.checkpoint, image, img_size, train_config["class_names"])
         logging.info(f"{config.image} classified as {class_name} with confidence {confidence:.4f}")
         feature = feature.detach().cpu().numpy()
         detect = clf.predict(feature)
