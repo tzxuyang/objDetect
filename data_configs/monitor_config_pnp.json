@@ -1,5 +1,5 @@
 {
-    "video_path": "/home/yang/MyRepos/object_detection/videos/pnp_110.mp4",
+    "video_path": "/home/yang/MyRepos/object_detection/videos/pnp_22.mp4",
     "image_size": [640, 480],
     "padding_bbox": [128, 240, 512, 480],
     "class_names": ["ungrabbed", "grabbed_success", "grabbed_fail"],

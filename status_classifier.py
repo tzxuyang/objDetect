@@ -141,6 +141,7 @@ if __name__ == "__main__":
             new_size=img_size,
             padding_bbox=padding_bbox,
             class_names=train_config["class_names"],
+            class_weights=train_config["class_weights"],
             batch_size=train_config["batch_size"],
             lr_max=train_config["lr_max"],
             lr_min=train_config["lr_min"],

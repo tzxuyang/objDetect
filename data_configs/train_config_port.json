@@ -7,6 +7,7 @@
     "image_size": [424, 240],
     "padding_bbox": [0, 0, 0, 0],
     "class_names": ["unplugged", "port_1", "port_2", "port_3", "port_4", "port_5"],
+    "class_weights": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     "batch_size": 256,
     "lr_max": 0.001,
     "lr_min": 0.0002,

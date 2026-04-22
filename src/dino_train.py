@@ -146,32 +146,39 @@ class CustomDataset(Dataset):
         self.labels = labels # Use torch.long for classification labels
 
     @classmethod
-    def fromDirectory(cls, data_dir, label_dir, transform=None, resize = None, padding_size = (0,0,0,0), scale = 1):
+    def fromDirectory(cls, data_dir, label_dir, transform=None, resize = None, padding_size = (0,0,0,0), weights = None):
         # Load data and labels from a directory
         file_list = utils.create_file_list(data_dir)
         data = []
         labels = []
-        for _ in range(scale):
-            for file in file_list:
-                # Load data and labels
-                img = Image.open(file).convert('RGB')
-                if resize is not None:
-                    origin_size = img.size
-                    ratio_min = min(resize[0]/origin_size[0], resize[1]/origin_size[1])
-                    resized_size = (int(origin_size[0]*ratio_min), int(origin_size[1]*ratio_min))
-                    padding_left = (resize[0] - resized_size[0]) //2
-                    padding_top = (resize[1] - resized_size[1]) //2
-                    padding_right = resize[0] - resized_size[0] - padding_left
-                    padding_bottom = resize[1] - resized_size[1] - padding_top
-                    img = img.resize(resized_size)
-                    img = ImageOps.expand(img, border=(padding_left, padding_top, padding_right, padding_bottom), fill='black')
-                if padding_size != (0,0,0,0):
-                    img = utils.pad_vit_input(img, bbox=padding_size)
-                label_file = file.replace(data_dir, label_dir).replace('.jpg', '.txt')
-                with open(label_file, 'r') as f:
-                    label = int(f.read().strip())
+        for file in file_list:
+            # Load data and labels
+            img = Image.open(file).convert('RGB')
+            if resize is not None:
+                origin_size = img.size
+                ratio_min = min(resize[0]/origin_size[0], resize[1]/origin_size[1])
+                resized_size = (int(origin_size[0]*ratio_min), int(origin_size[1]*ratio_min))
+                padding_left = (resize[0] - resized_size[0]) //2
+                padding_top = (resize[1] - resized_size[1]) //2
+                padding_right = resize[0] - resized_size[0] - padding_left
+                padding_bottom = resize[1] - resized_size[1] - padding_top
+                img = img.resize(resized_size)
+                img = ImageOps.expand(img, border=(padding_left, padding_top, padding_right, padding_bottom), fill='black')
+            if padding_size != (0,0,0,0):
+                img = utils.pad_vit_input(img, bbox=padding_size)
+            label_file = file.replace(data_dir, label_dir).replace('.jpg', '.txt')
+            with open(label_file, 'r') as f:
+                label = int(f.read().strip())
+            
+            # If weights are provided, duplicate samples according to their class weights
+            if weights is not None:
+                for _ in range(int(weights[label])):
+                    data.append(img)    
+                    labels.append(label)
+            else:
                 data.append(img)    
                 labels.append(label)
+                
         if transform:
             data = [transform(img) for img in data]
         return cls(data, labels)
@@ -274,7 +281,7 @@ def extract_model_features(custom_model, test_loader):
             feature_list.append(feature.detach().cpu().numpy())
     return feature_list
 
-def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, train_cluster =False, new_size = None, batch_size=_BATCH_SIZE, padding_bbox=(0,0,0,0), lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
+def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, class_weights, train_cluster =False, new_size = None, batch_size=_BATCH_SIZE, padding_bbox=(0,0,0,0), lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -300,6 +307,7 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         transform = transforms,
         resize = new_size,
         padding_size = padding_bbox,
+        weights = class_weights,
     )
     transforms = custom_model.get_val_transform()
     val_dataset = CustomDataset.fromDirectory(
@@ -308,6 +316,7 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         transform = transforms,
         resize = new_size,
         padding_size = padding_bbox,
+        weights = None,
     )
     logging.info(f"train_dataset size : {int(train_dataset.__len__())}")
 

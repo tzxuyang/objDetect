@@ -17,16 +17,13 @@ import timm
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
 import torch
-import torch.nn as nn
-import torchvision
 from torchvision import transforms as pth_transforms
 import numpy as np
 from PIL import Image, ImageOps
 import torch.nn.functional as F
 from torchvision.models.feature_extraction import get_graph_node_names, create_feature_extractor
 
-import utils
-from dino_train import DinoClassifier, set_seed, train_classifier
+from dino_train import DinoClassifier
 
 NUM_CLASS = 3
 PATH = "./checkpoints/dino_classifier.pth"
