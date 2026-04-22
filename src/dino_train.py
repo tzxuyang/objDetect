@@ -167,7 +167,6 @@ class CustomDataset(Dataset):
                     img = ImageOps.expand(img, border=(padding_left, padding_top, padding_right, padding_bottom), fill='black')
                 if padding_size != (0,0,0,0):
                     img = utils.pad_vit_input(img, bbox=padding_size)
-                    img.show()
                 label_file = file.replace(data_dir, label_dir).replace('.jpg', '.txt')
                 with open(label_file, 'r') as f:
                     label = int(f.read().strip())
