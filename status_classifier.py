@@ -39,7 +39,12 @@ class ClassifierConfig:
 
 def predict(checkpoint, image_path, new_size, class_names, data_config=None):
     dino_classifier = DinoClassifier(num_classes=len(class_names))
-    dino_classifier.load_state_dict(torch.load(checkpoint))
+    # Load checkpoint onto CPU first to avoid CUDA device-deserialization errors, then move model to device
+    try:
+        state_dict = torch.load(checkpoint, map_location=torch.device('cpu'))
+    except Exception as e:
+        raise RuntimeError(f"Failed to load checkpoint {checkpoint}: {e}")
+    dino_classifier.load_state_dict(state_dict)
     dino_classifier.to(device := torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     dino_classifier.eval()
 
