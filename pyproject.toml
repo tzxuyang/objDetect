@@ -7,15 +7,22 @@ requires-python = ">=3.10,<3.11"
 # Minimal, safe runtime dependencies for inference/training. Add heavy or system packages to non-pip-requirements.txt
 dependencies = [
   "torch",
-  "pillow_heif",
+  "torchvision",
+  "timm>=1.0.27",
   "transformers",
+  "tyro>=1.0.13",
+  "pillow_heif",
   "numpy",
   "opencv-python",
   "Pillow",
   "matplotlib",
   "scipy",
   "scikit-learn",
+  "pandas",
+  "scikit-image",
   "requests>=2.34.2",
+  "retrying",
+  "wandb",
 ]
 
 [build-system]
