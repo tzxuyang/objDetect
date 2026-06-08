@@ -6,6 +6,7 @@ requires-python = ">=3.10,<3.11"
 
 # Minimal, safe runtime dependencies for inference/training. Add heavy or system packages to non-pip-requirements.txt
 dependencies = [
+  "rich",
   "torch",
   "torchvision",
   "timm>=1.0.27",

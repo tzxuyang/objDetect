@@ -1,0 +1,17 @@
+# Non-pip / system packages (install these with apt, rosdep, or vendor installers)
+# Examples you may need to add for ROS, GPU, or system-level libs:
+# ros-<distro>-rclpy
+# libgraphviz-dev
+# build-essential
+# nvidia-cuda-toolkit
+# tensorrt
+
+# Keep this file updated with packages you cannot install via pip/uv
+
+# ROS/system packages required for monitor_app
+ros-humble-rclpy
+ros-humble-std-msgs
+ros-humble-sensor-msgs
+ros-humble-cv-bridge
+# Note: arbitrator_msg is a local ROS package; build it in your workspace or install via ros2 pkg
+arbitrator_msg
