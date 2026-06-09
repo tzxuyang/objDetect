@@ -13,7 +13,7 @@ dependencies = [
   "transformers",
   "tyro>=1.0.13",
   "pillow_heif",
-  "numpy",
+  "numpy<2",
   "opencv-python",
   "Pillow",
   "matplotlib",

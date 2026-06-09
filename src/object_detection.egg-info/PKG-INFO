@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: object_detection
+Version: 0.0.0
+Summary: YOLO object detection and status classifier
+Requires-Python: <3.11,>=3.10
+Requires-Dist: rich
+Requires-Dist: torch
+Requires-Dist: torchvision
+Requires-Dist: timm>=1.0.27
+Requires-Dist: transformers
+Requires-Dist: tyro>=1.0.13
+Requires-Dist: pillow_heif
+Requires-Dist: numpy<2
+Requires-Dist: opencv-python
+Requires-Dist: Pillow
+Requires-Dist: matplotlib
+Requires-Dist: scipy
+Requires-Dist: scikit-learn
+Requires-Dist: pandas
+Requires-Dist: scikit-image
+Requires-Dist: requests>=2.34.2
+Requires-Dist: retrying
+Requires-Dist: wandb

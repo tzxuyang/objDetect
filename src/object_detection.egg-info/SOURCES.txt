@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+src/auto_labeling.py
+src/convert_img.py
+src/convert_video.py
+src/dino_train.py
+src/test_image_diff.py
+src/utils.py
+src/visualize_attention.py
+src/yolo_train.py
+src/object_detection.egg-info/PKG-INFO
+src/object_detection.egg-info/SOURCES.txt
+src/object_detection.egg-info/dependency_links.txt
+src/object_detection.egg-info/requires.txt
+src/object_detection.egg-info/top_level.txt
