@@ -215,7 +215,9 @@ def train_model(custom_model, train_loader, val_loader, **kwargs):
     custom_model.to(device)
     criterion = nn.CrossEntropyLoss()
     # Adam to optimze the classification hear
-    optimizer = optim.Adam(custom_model.head.parameters(), lr=kwargs.get('learning_rate', 0.001))
+    # When using DataParallel, access the underlying module's head parameters
+    head_params = custom_model.module.head.parameters() if isinstance(custom_model, nn.DataParallel) else custom_model.head.parameters()
+    optimizer = optim.Adam(head_params, lr=kwargs.get('learning_rate', 0.001))
     # Learning rate scheduler
     scheduler = CosineAnnealingLR(optimizer, T_max=kwargs.get('num_epochs', 150), eta_min=kwargs.get('eta_min', 0.0001))
 
@@ -295,12 +297,18 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
     # Load custom model
     num_classes = len(class_names)
     custom_model = DinoClassifier(num_classes=num_classes)
-    dim, num_classes,size = custom_model.get_info()
+    # If multiple GPUs are available, wrap the model with DataParallel for multi-GPU training
+    if torch.cuda.device_count() > 1:
+        print(f"Let's use {torch.cuda.device_count()} GPUs!")
+        custom_model = nn.DataParallel(custom_model)
+    dim, num_classes,size = (custom_model.module.get_info() if isinstance(custom_model, nn.DataParallel) else custom_model.get_info())
+    # Access underlying module when wrapped by DataParallel
+    model_owner = custom_model.module if isinstance(custom_model, nn.DataParallel) else custom_model
     logging.info(f"Custom Dino Classifier model created. with vit dimension of {dim} and num_classes: {num_classes} and model size: {size/1e6}M parameters")
     logging.info(custom_model)
 
     # Prepare dataset and dataloader
-    transforms = custom_model.get_train_transform()
+    transforms = model_owner.get_train_transform()
     train_dataset = CustomDataset.fromDirectory(
         train_file_directory, 
         train_label_directory,
@@ -309,7 +317,7 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         padding_size = padding_bbox,
         weights = class_weights,
     )
-    transforms = custom_model.get_val_transform()
+    transforms = model_owner.get_val_transform()
     val_dataset = CustomDataset.fromDirectory(
         test_file_directory, 
         test_label_directory,
@@ -351,28 +359,37 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         next_folder = "train"
     os.makedirs(f"./runs/cls/{next_folder}/weights", exist_ok=True)
     path=f"./runs/cls/{next_folder}/weights/dino_classifier.pth"
-    custom_model.save_model(path)
+    # Save using the underlying module if wrapped with DataParallel
+    saver = custom_model.module if isinstance(custom_model, nn.DataParallel) else custom_model
+    saver.save_model(path)
     logging.info(f"Model saved to {path}.")
 
     # Validate the model
     trained_model = DinoClassifier(num_classes=num_classes)
     trained_model.load_state_dict(torch.load(path))
+    # If multiple GPUs were used during training, wrap the trained model when loading for inference
+    if torch.cuda.device_count() > 1:
+        trained_model = nn.DataParallel(trained_model)
     trained_model.to(device)
 
     # inference on val dataset
     trained_model.eval()
-    data_config = timm.data.resolve_model_data_config(trained_model.backbone)
+    # Resolve data config from the underlying module if wrapped by DataParallel
+    backbone_owner = trained_model.module if isinstance(trained_model, nn.DataParallel) else trained_model
+    data_config = timm.data.resolve_model_data_config(backbone_owner.backbone)
     logging.info("--------------------------------------------------------------------------------------------------")
     val_dir = test_file_directory
     image_file_list = utils.create_file_list(val_dir)
+    # Use underlying module when DataParallel wraps the trained model
+    model_owner = trained_model.module if isinstance(trained_model, nn.DataParallel) else trained_model
     for image_path in image_file_list:
-        input_tensor = trained_model.process_image(data_config, image_path, new_size=new_size).to(device)
-        class_name, confidence = trained_model.predict(input_tensor, class_names=class_names)
+        input_tensor = model_owner.process_image(data_config, image_path, new_size=new_size).to(device)
+        class_name, confidence = model_owner.predict(input_tensor, class_names=class_names)
         logging.info(f"{image_path} classified as {class_name} with confidence {confidence:.4f}")
 
     # evaluate on test dataset
     logging.info("*********************************************Train set report: *********************************************")
-    transforms = custom_model.get_val_transform()
+    transforms = model_owner.get_val_transform()
     test_loader = DataLoader(
         train_dataset, 
         batch_size=len(train_dataset), 
@@ -389,7 +406,7 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
 
     # evaluate on test dataset
     logging.info("**********************************************Test set report: **********************************************")
-    transforms = custom_model.get_val_transform()
+    transforms = model_owner.get_val_transform()
     test_loader = DataLoader(
         val_dataset, 
         batch_size=len(val_dataset), 
