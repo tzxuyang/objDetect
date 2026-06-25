@@ -46,38 +46,19 @@ uv run python src/convert_img.py --root_dir /home/yang/datasets/white_board_imag
 
 * Step 1.1: autolabel
 ```
-uv run python status_classifier.py --mode autolabel --train_image /home/yang/MyRepos/tensorRT/datasets/port_cls/images/train --train_label /home/yang/MyRepos/tensorRT/datasets/port_cls/labels/train --val_image /home/yang/MyRepos/tensorRT/datasets/port_cls/images/val --val_label /home/yang/MyRepos/tensorRT/datasets/port_cls/labels/val
-```
-
-* Step 1.2: semi-autolabel
-```
-# for port classification
-uv run python status_classifier.py --mode semi_autolabel_label --train_image /home/yang/MyRepos/tensorRT/datasets/port_actibot/images/train --train_label /home/yang/MyRepos/tensorRT/datasets/port_actibot/labels/train --image_list /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode0 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode1 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode2 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode3 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode4
-
-uv run python status_classifier.py --mode semi_autolabel_label --val_image /home/yang/MyRepos/tensorRT/datasets/port_actibot/images/val --val_label /home/yang/MyRepos/tensorRT/datasets/port_actibot/labels/val --image_list /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode4 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode5
-
-# for pick and place classification
-uv run python status_classifier.py --mode semi_autolabel_label --train_image /home/yang/MyRepos/tensorRT/datasets/pick_n_place_w1/images/train --train_label /home/yang/MyRepos/tensorRT/datasets/pick_n_place_w1/labels/train --image_list /home/yang/MyRepos/tensorRT/datasets/pick_n_place_w1/episode0 /home/yang/MyRepos/tensorRT/datasets/pick_n_place_w1/episode1
-
-uv run python status_classifier.py --mode semi_autolabel_label --val_image /home/yang/MyRepos/tensorRT/datasets/pick_n_place_w1/images/val --val_label /home/yang/MyRepos/tensorRT/datasets/pick_n_place_w1/labels/val --image_list /home/yang/MyRepos/tensorRT/datasets/pick_n_place_w1/episode0 /home/yang/MyRepos/tensorRT/datasets/pick_n_place_w1/episode1
+uv run status_classifier.py --mode autolabel --label_config data_configs/train_config_ioboard.json
 ```
 
 * Step 2: train
 Create a train config file such as /data_configs/train_config_port.json under /data/configs. Update the training config and run CLI:
 ```
-# for port classification 
-uv run python status_classifier.py --mode train --train_config data_configs/train_config_port.json --project_name classifier_dinov3_small_no_augment
-
-# for pick and place classification
-uv run python status_classifier.py --mode train --train_config data_configs/train_config_pnp.json --project_name classifier_dinov3_pick_n_place_w1_139
+# for ioboard classification 
+uv run python status_classifier.py --mode train --train_config data_configs/train_config_ioboard.json --project_name classifier_ioboard_0622
 ```
 The trained checkpoint will be saved in /runs/
 
 * Step 3: predict
 ```
-# for port classification 
-uv run python status_classifier.py --mode predict --train_config data_configs/train_config_port.json --checkpoint ./checkpoints/dino_classifier.pth --image ./images/port_2_001.jpg
-
-# for pick and place classification
-uv run python status_classifier.py --mode predict --train_config data_configs/train_config_pnp.json --checkpoint ./checkpoints/dino_classifier.pth --image ./images/pick_n_place_1.jpg
+# for ioboard classification
+uv run status_classifier.py --mode predict --train_config data_configs/train_config_ioboard.json --checkpoint ./checkpoints/dino_classifier.pth --image-left ./images/camera_left_000017.jpg --image-right ./images/camera_right_000017.jpg
 ```

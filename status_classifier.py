@@ -1,6 +1,8 @@
 import sys
 import os
+from cv2 import data
 import timm
+from torch.quantization import default_qat_qconfig
 # Get the absolute path to the directory containing 'src'
 # Adjust the path based on your project structure
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '.')) 
@@ -11,9 +13,9 @@ import tyro
 import logging
 from PIL import Image
 from dataclasses import dataclass, field, fields, MISSING
-from src.auto_labeling import classifier_autolabel_complex, create_video, batch_label
+from src.auto_labeling import classifier_autolabel_complex, create_video, batch_label, PassFailDataset
 from src.dino_train import DinoClassifier, set_seed, train_classifier
-from src.utils import pad_vit_input
+from src.utils import pad_vit_input, concat_images
 import json
 import pickle
 import torch
@@ -29,13 +31,30 @@ class ClassifierConfig:
     project_name: str = _PROJECT_NAME # wandb project name
     wandb_key: str = _WANDB_KEY # wandb api key
     checkpoint: str = "./checkpoints/dino_classifier.pth" # yolo prediction check point
-    image: str = "./images/port_2.jpg" # image path
+    image_left: str = "default_value" # left image path for predict mode
+    image_right: str = "default_value" # right image path for predict mode
+    label_config: str = "data_configs/label_config_ioboard.json" # data config json file path
     train_config: str = "data_configs/train_config_port.json" # training config json file path
     train_image: str = "default_value"  # autolabeling train image path
     train_label: str = "default_value" # autolabeling train label writing path
     val_image: str = "default_value" # autolabeling val image path
     val_label: str = "default_value" # autolabeling val label writing path
     image_list: list[str] = field(default_factory=list)  # autolabeling raw image list path
+
+def _resolve_repo_path(path):
+    if os.path.isabs(path):
+        return path
+    return os.path.abspath(os.path.join(project_root, path))
+
+def _infer_output_root(train_image, train_label, val_image, val_label):
+    resolved_paths = [
+        _resolve_repo_path(train_image),
+        _resolve_repo_path(train_label),
+        _resolve_repo_path(val_image),
+        _resolve_repo_path(val_label),
+    ]
+    output_root = os.path.commonpath(resolved_paths)
+    return output_root
 
 def predict(checkpoint, image_path, new_size, class_names, data_config=None):
     dino_classifier = DinoClassifier(num_classes=len(class_names))
@@ -63,78 +82,46 @@ def anormally_detect(model, feature_array):
 
 if __name__ == "__main__":
     config = tyro.cli(ClassifierConfig)
-
-    # python status_classifier.py --mode autolabel --train_image /home/yang/MyRepos/tensorRT/datasets/port_cls/images/train --train_label /home/yang/MyRepos/tensorRT/datasets/port_cls/labels/train2 \
-    # --val_image /home/yang/MyRepos/tensorRT/datasets/port_cls/images/val --val_label /home/yang/MyRepos/tensorRT/datasets/port_cls/labels/val2
+    # uv run status_classifier.py --mode autolabel_label --label_config data_configs/label_config_ioboard.json
     if config.mode == "autolabel":
-        label_prompt = """
-        Please describe this image. Describe if the cable with a green head is plugged in a circular port, and which port it is in in the format with as follows:
-        {
-            "description": "",
-            "Is plugged in": true/false, 
-            "inserted to port (int)": "",
-        }
-        """
-        classifier_autolabel_complex(
-            train_image_dir = config.train_image, 
-            train_label_dir = config.train_label, 
-            val_image_dir = config.val_image, 
-            val_label_dir = config.val_label, 
-            label_prompt = label_prompt,
-            step = 5,
-            max_new_tokens=1024
+        label_config = json.load(open(config.label_config, "r"))
+        output_root = _infer_output_root(
+            label_config["train_image"],
+            label_config["train_label"],
+            label_config["val_image"],
+            label_config["val_label"],
         )
-    # # create train data set
-    # trgt_dir_img = "/home/yang/MyRepos/tensorRT/datasets/port_actibot/images/train"
-    # trgt_dir_label = "/home/yang/MyRepos/tensorRT/datasets/port_actibot/labels/train"
-    # root_dir = "/home/yang/MyRepos/tensorRT/datasets/port_actibot/episode0"
-    # root_label = "/home/yang/MyRepos/tensorRT/datasets/port_actibot/episode0.txt"
-    # batch_label(root_dir, root_label, trgt_dir_img, trgt_dir_label, step=10)
 
-    # python status_classifier.py --mode semi_autolabel_img2vid --image_list /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode0 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode1 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode2 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode3 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode4 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode5
-    elif config.mode == "semi_autolabel_img2vid":
-        image_list = config.image_list
-        for image_dir in image_list:
-            logging.info(f"Processing image dir: {image_dir} to video")
-            trgt_video_file = image_dir + ".mp4"
-            create_video(image_dir, trgt_video_file, fps=30)
-
-    # python status_classifier.py --mode semi_autolabel_label --train_image /home/yang/MyRepos/tensorRT/datasets/port_actibot/images/train --train_label /home/yang/MyRepos/tensorRT/datasets/port_actibot/labels/train --image_list /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode0 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode1 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode2 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode3 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode4
-    # python status_classifier.py --mode semi_autolabel_label --val_image /home/yang/MyRepos/tensorRT/datasets/port_actibot/images/val --val_label /home/yang/MyRepos/tensorRT/datasets/port_actibot/labels/val --image_list /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode4 /home/yang/MyRepos/tensorRT/datasets/port_actibot/episode5
-    elif config.mode == "semi_autolabel_label":
-        explicitly_passed = [f.name for f in fields(ClassifierConfig) if getattr(config, f.name) is not MISSING and getattr(config, f.name) != "default_value"]
-        if 'train_image' in explicitly_passed and 'train_label' in explicitly_passed:
-            trgt_dir_img = config.train_image
-            trgt_dir_label = config.train_label
-            for image_dir in config.image_list:
-                logging.info(f"Processing image dir: {image_dir} to labels in {trgt_dir_label}")
-                batch_label(
-                    image_dir, 
-                    image_dir + ".txt", 
-                    trgt_dir_img, 
-                    trgt_dir_label,
-                    step = 10
-                )
-        elif 'val_image' in explicitly_passed and 'val_label' in explicitly_passed:
-            trgt_dir_img = config.val_image
-            trgt_dir_label = config.val_label
-            for image_dir in config.image_list:
-                logging.info(f"Processing image dir: {image_dir} to labels in {trgt_dir_label}")
-                batch_label(
-                    image_dir, 
-                    image_dir + ".txt", 
-                    trgt_dir_img, 
-                    trgt_dir_label,
-                    step = 20,
-                    init_idx = 5
-                )
-        else:
-            logging.error("For semi_autolabel_label mode, please provide either train_image and train_label or val_image and val_label paths.")
+        dataset = PassFailDataset(
+            success_path_left=label_config["success_path_left"],
+            success_path_right=label_config["success_path_right"],
+            fail_path_left=label_config["fail_path_left"],
+            fail_path_right=label_config["fail_path_right"],
+            fail_fps=label_config.get("fail_fps", 60),
+            fail_duration=label_config.get("fail_duration", 0.5),
+            success_fps=label_config.get("success_fps", 1),
+            left_mask_bbox=label_config["padding_bbox_left"],
+            right_mask_bbox=label_config["padding_bbox_right"],
+            val_ratio=label_config.get("val_ratio", 0.2),
+            output_path=output_root,
+        )
+        dataset.create_train_val_split()
+        logging.info(
+            "Validation success files: %s",
+            [os.path.basename(path) for path in dataset.val_success_files_left],
+        )
+        logging.info(
+            "Validation fail files: %s",
+            [os.path.basename(path) for path in dataset.val_fail_files_left],
+        )
+        dataset.create_train_classification_dataset()
+        dataset.create_val_classification_dataset()
+        logging.info("Created classification dataset under %s", output_root)
         
     elif config.mode == "train":
-    # python status_classifier.py --mode train --train_config data_configs/train_config_pnp.json --project_name dino_classifier_177_dinov3_small
+    # uv run status_classifier.py --mode train --train_config data_configs/train_config_pnp.json --project_name dino_classifier_177_dinov3_small
         train_config = json.load(open(config.train_config, "r"))
-        img_size = (train_config["image_size"][0], train_config["image_size"][1])
+        img_size = (train_config["image_size"][0]*2, train_config["image_size"][1])
         padding_bbox = (train_config["padding_bbox"][0], train_config["padding_bbox"][1], train_config["padding_bbox"][2], train_config["padding_bbox"][3])
         train_classifier(
             project_name=config.project_name,
@@ -154,19 +141,36 @@ if __name__ == "__main__":
         )
 
     else:
-    # python status_classifier.py --mode predict --train_config data_configs/train_config_pnp.json --checkpoint ./checkpoints/dino_classifier.pth --image ./images/port_2.jpg
+    # uv run status_classifier.py --mode predict --train_config data_configs/train_config_ioboard.json --checkpoint ./checkpoints/dino_classifier.pth --image-left ./images/left.jpg --image-right ./images/right.jpg
         train_config = json.load(open(config.train_config, "r"))
         set_seed(_SEED)
         with open("./checkpoints/anormally_detect.pkl", 'rb') as file:
             clf = pickle.load(file)
-        img_size = (train_config["image_size"][0], train_config["image_size"][1])
-        padding_bbox = (train_config["padding_bbox"][0], train_config["padding_bbox"][1], train_config["padding_bbox"][2], train_config["padding_bbox"][3])
-        image = Image.open(config.image).convert("RGB")
-        if padding_bbox != (0, 0, 0, 0):
-            image = pad_vit_input(image, bbox=padding_bbox)
+        img_size = (train_config["image_size"][0]*2, train_config["image_size"][1])
+        if config.image_left == "default_value" or config.image_right == "default_value":
+            raise ValueError("predict mode requires both --image-left and --image-right")
+
+        padding_bbox_left = tuple(train_config.get("padding_bbox_left", train_config.get("padding_bbox", [0, 0, 0, 0])))
+        padding_bbox_right = tuple(train_config.get("padding_bbox_right", train_config.get("padding_bbox", [0, 0, 0, 0])))
+
+        left_image = Image.open(_resolve_repo_path(config.image_left)).convert("RGB")
+        right_image = Image.open(_resolve_repo_path(config.image_right)).convert("RGB")
+
+        if padding_bbox_left != (0, 0, 0, 0):
+            left_image = pad_vit_input(left_image, bbox=padding_bbox_left)
+        if padding_bbox_right != (0, 0, 0, 0):
+            right_image = pad_vit_input(right_image, bbox=padding_bbox_right)
+
+        image = concat_images(left_image, right_image)
         image.show()
         class_name, confidence, feature = predict(config.checkpoint, image, img_size, train_config["class_names"])
-        logging.info(f"{config.image} classified as {class_name} with confidence {confidence:.4f}")
+        logging.info(
+            "%s + %s classified as %s with confidence %.4f",
+            config.image_left,
+            config.image_right,
+            class_name,
+            confidence,
+        )
         feature = feature.detach().cpu().numpy()
         detect = clf.predict(feature)
         logging.info(f"anormally result detection {detect}")

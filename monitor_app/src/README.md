@@ -1,22 +1,19 @@
 # Simulate robot monitor model
-* update monitor config under monitor_config_pnp.json or monitor_config_port.json
+* update monitor config under `monitor_config_pnp.json`, `monitor_config_port.json`, or `monitor_config_ioboard.json`
 
 * run monitor node
-  * Pick and place
+  * IO board
   ```
-  uv run python monitor_app/src/monitor_node.py --config_path data_configs/monitor_config_pnp.json
-  ```
-  * Port insert
-  ```
-  uv run python monitor_app/src/monitor_node.py --config_path data_configs/monitor_config_port.json
+  uv run python monitor_app/src/monitor_node.py --config_path data_configs/monitor_config_ioboard.json
   ```
 
-* run camera simulation node, which replay a recorded video
-  * Pick and place
+* run camera simulation node, which replays recorded left/right videos
   ```
-  uv run python monitor_app/src/camera_sim_node.py --config-path data_configs/monitor_config_pnp.json
+  * IO board without saving images
   ```
-  * Port insert
+  uv run python monitor_app/src/camera_sim_node.py --config_path data_configs/monitor_config_ioboard.json
   ```
-  uv run python monitor_app/src/camera_sim_node.py --config_path data_configs/monitor_config_port.json
+  * IO board with image saving enabled
+  ```
+  uv run python monitor_app/src/camera_sim_node.py --config_path data_configs/monitor_config_ioboard.json --save_image
   ```

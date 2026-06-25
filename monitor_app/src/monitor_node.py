@@ -26,14 +26,13 @@ project_root = os.path.dirname(os.path.dirname(project_root))
 sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'monitor_app'))
 
-from monitor_app.src.monitor import load_model, status_monitor, MonitorFSM, AnormallyFSM, PnpMonitorFSM
+from monitor_app.src.monitor import load_model, status_monitor, MonitorFSM, AnormallyFSM
 
 logging.basicConfig(level=logging.INFO)
 
 _BLACK_THRESHOLD = 10
 _FPS = 30
 _DOWN_SAMPLE_RATE = 3
-_FILTER_TIME = 0.15
 
 @dataclass
 class Config:
@@ -46,16 +45,52 @@ def read_config(config_path):
     fsm = monitor_config.get("fsm")
     fsm_thres = monitor_config.get("svm_thres")
     img_size = monitor_config.get("image_size")
-    padding_bbox = monitor_config.get("padding_bbox")
-    return duration_threshold, class_names, fsm, img_size, fsm_thres, padding_bbox
+    img_size = (img_size[0]*2, img_size[1])
+    warning_filter_duration = monitor_config.get(
+        "warning_filter_duration",
+        monitor_config.get("warning_duration", 0.1),
+    )
+    recover_filter_duration = monitor_config.get(
+        "recover_filter_duration",
+        monitor_config.get("recover_duration", 10),
+    )
+    padding_bbox_left = monitor_config.get("padding_bbox_left", monitor_config.get("padding_bbox"))
+    padding_bbox_right = monitor_config.get("padding_bbox_right")
+    return (
+        duration_threshold,
+        class_names,
+        fsm,
+        img_size,
+        fsm_thres,
+        warning_filter_duration,
+        recover_filter_duration,
+        padding_bbox_left,
+        padding_bbox_right,
+    )
 
 class MonitorNode(Node):
-    def __init__(self, duration_threshold, class_names, fsm, img_size, fsm_thres, padding_bbox):
+    def __init__(
+        self,
+        duration_threshold,
+        class_names,
+        fsm,
+        img_size,
+        fsm_thres,
+        warning_filter_duration,
+        recover_filter_duration,
+        padding_bbox_left,
+        padding_bbox_right,
+    ):
         super().__init__('monitor_node')
-        self.subscription = self.create_subscription(
+        self.left_subscription = self.create_subscription(
             Image,
-            '/camera/camera/color/image_rect_raw',
-            self.image_callback,
+            '/camera/camera/color/image_rect_left',
+            self.left_image_callback,
+            10)
+        self.right_subscription = self.create_subscription(
+            Image,
+            '/camera/camera/color/image_rect_right',
+            self.right_image_callback,
             10)
         self.count = 0
         self.bridge = CvBridge()
@@ -66,8 +101,12 @@ class MonitorNode(Node):
         self.int2class = {idx: name for idx, name in enumerate(class_names)}
         self.fsm = fsm
         self.fsm_thres = fsm_thres
-        self.padding_bbox = padding_bbox
-        self.current_frame = None
+        self.warning_filter_duration = warning_filter_duration
+        self.recover_filter_duration = recover_filter_duration
+        self.padding_bbox_left = padding_bbox_left
+        self.padding_bbox_right = padding_bbox_right
+        self.current_left_frame = None
+        self.current_right_frame = None
         self.monitor_warning = False
         self.error_description = ""
         self.cur_subtask_idx = 0
@@ -83,7 +122,7 @@ class MonitorNode(Node):
 
     def _image_edit(self):
         # add_text_2_img(img, text, font_size=40, xy=(20, 20), color=(0, 0, 255)):
-        img = self.current_frame
+        img = self.current_left_frame.copy()
 
         # 2. Define text parameters
         state_text = self.int2class[self.cur_subtask_idx]
@@ -110,18 +149,24 @@ class MonitorNode(Node):
             cv2.putText(img, warning_text, warning_position, font, font_scale, warning_color, thickness, line_type)
         return img
 
-    def image_callback(self, msg):
+    def left_image_callback(self, msg):
         if self.count % _DOWN_SAMPLE_RATE == 0:
-            self.current_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
-            edited_frame = self._image_edit()
-            cv2.imshow("Monitor Frame", edited_frame)
-            cv2.waitKey(1)
+            self.current_left_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            if self.current_left_frame is not None:
+                edited_frame = self._image_edit()
+                cv2.imshow("Monitor Frame", edited_frame)
+                cv2.waitKey(1)
         self.count += 1
 
+    def right_image_callback(self, msg):
+        self.current_right_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+
     def image_issue(self):
-        if self.current_frame is None:
+        if self.current_left_frame is None or self.current_right_frame is None:
             return False
-        if np.mean(self.current_frame) < _BLACK_THRESHOLD:
+        if np.mean(self.current_left_frame) < _BLACK_THRESHOLD:
+            return True
+        if np.mean(self.current_right_frame) < _BLACK_THRESHOLD:
             return True
         return False
     
@@ -138,20 +183,28 @@ class MonitorNode(Node):
         with open("./checkpoints/anormally_detect.pkl", 'rb') as file:
             clf = pickle.load(file)
 
-        if self.fsm == "MonitorFSM":
-            monitor_fsm = MonitorFSM(filter_time=_FILTER_TIME, fps=_FPS)
-        elif self.fsm == "PnpMonitorFSM":
-            monitor_fsm = PnpMonitorFSM(filter_time=_FILTER_TIME, fps=_FPS)
+        monitor_fsm = MonitorFSM(
+            filter_time_warn=self.warning_filter_duration,
+            filter_time_recover=self.recover_filter_duration,
+            fps=_FPS,
+        )
         anormally_fsm = AnormallyFSM(filter_time=0.2, fps=_FPS)
 
         while rclpy.ok():
             rclpy.spin_once(self)
+            if self.current_left_frame is None or self.current_right_frame is None:
+                time.sleep(0.01)
+                continue
             raw_image_issue = self.image_issue()
-            image_cv = self.current_frame
-            color_converted_image = cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB)
-            image_path = PILImage.fromarray(color_converted_image)
+            left_image_cv = self.current_left_frame
+            right_image_cv = self.current_right_frame
+            left_color_image = cv2.cvtColor(left_image_cv, cv2.COLOR_BGR2RGB)
+            right_color_image = cv2.cvtColor(right_image_cv, cv2.COLOR_BGR2RGB)
+            left_image = PILImage.fromarray(left_color_image)
+            right_image = PILImage.fromarray(right_color_image)
             status, abnormal, _, _, duration, dist = status_monitor(
-                image_path, 
+                left_image,
+                right_image,
                 monitor_fsm, 
                 anormally_fsm,
                 self.fsm_thres, 
@@ -159,18 +212,19 @@ class MonitorNode(Node):
                 data_config, 
                 self.img_size, 
                 self.class_names,
-                self.padding_bbox,
+                self.padding_bbox_left,
+                self.padding_bbox_right,
                 clf
             )
 
             self.cur_subtask_idx = status
             self.reserve11 = duration
-            if raw_image_issue or abnormal or duration > self.duration_threshold or status == 2:
+            if raw_image_issue or abnormal or status == 1:
                 self.monitor_warning = True
-                if duration > self.duration_threshold:
-                    self.error_description = "Duration Issue"
+                self.error_description = ""
             else:
                 self.monitor_warning = False
+                self.error_description = ""
         
             logging.info(f"raw image issue: {raw_image_issue}, abnormal status: {abnormal}, dist: {dist} duration in state: {duration:.2f} sec")
 
@@ -178,10 +232,32 @@ class MonitorNode(Node):
             time.sleep(0.01)
 
 def main(cfg: Config)-> None:
-    duration_thres, class_names, fsm, img_size, fsm_thres, padding_bbox = read_config(cfg.config_path)
-    padding_bbox = (padding_bbox[0], padding_bbox[1], padding_bbox[2], padding_bbox[3])
+    (
+        duration_thres,
+        class_names,
+        fsm,
+        img_size,
+        fsm_thres,
+        warning_filter_duration,
+        recover_filter_duration,
+        padding_bbox_left,
+        padding_bbox_right,
+    ) = read_config(cfg.config_path)
+    padding_bbox_left = (padding_bbox_left[0], padding_bbox_left[1], padding_bbox_left[2], padding_bbox_left[3])
+    if padding_bbox_right is not None:
+        padding_bbox_right = (padding_bbox_right[0], padding_bbox_right[1], padding_bbox_right[2], padding_bbox_right[3])
     rclpy.init(args=None)
-    monitor_node = MonitorNode(duration_thres, class_names, fsm, img_size, fsm_thres, padding_bbox)
+    monitor_node = MonitorNode(
+        duration_thres,
+        class_names,
+        fsm,
+        img_size,
+        fsm_thres,
+        warning_filter_duration,
+        recover_filter_duration,
+        padding_bbox_left,
+        padding_bbox_right,
+    )
     try:
         monitor_node.run()
     except KeyboardInterrupt:
