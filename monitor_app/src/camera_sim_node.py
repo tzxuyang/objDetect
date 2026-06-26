@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -57,6 +56,7 @@ class FFmpegVideoReader:
         self.width, self.height = get_video_size(video_path)
         self.frame_size = self.width * self.height * 3
         self.process = None
+        self.finished = False
         self._start()
 
     def _start(self):
@@ -86,20 +86,35 @@ class FFmpegVideoReader:
         )
 
     def read(self):
+        # Once the stream has ended (or the process is gone), report EOF.
+        if self.finished or self.process is None:
+            return False, None
+
         raw_frame = self.process.stdout.read(self.frame_size)
         if len(raw_frame) != self.frame_size:
-            self._start()
-            raw_frame = self.process.stdout.read(self.frame_size)
-            if len(raw_frame) != self.frame_size:
-                return False, None
+            # A short read means end-of-stream (natural end of the video, or
+            # ffmpeg was killed, e.g. by Ctrl+C). Do NOT restart ffmpeg here:
+            # restarting is what caused the video to loop forever and also
+            # prevented clean termination on SIGINT. Mark finished instead.
+            self.finished = True
+            return False, None
 
         frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((self.height, self.width, 3))
         return True, frame.copy()
 
     def close(self):
-        if self.process is not None and self.process.poll() is None:
+        if self.process is None:
+            return
+        if self.process.poll() is None:
             self.process.terminate()
-            self.process.wait()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+                self.process.wait()
+        if self.process.stdout is not None:
+            self.process.stdout.close()
+        self.process = None
 
 class ImagePublisher(Node):
     def __init__(self, img_size, video_path_left, video_path_right, save_image=False):
@@ -114,6 +129,7 @@ class ImagePublisher(Node):
         os.makedirs(self.snapshot_dir, exist_ok=True)
         self.last_snapshot_time = 0.0
         self.snapshot_idx = 0
+        self.finished = False
         timer_period = _TIMER_PERIOD
         self.timer = self.create_timer(timer_period, self.timer_callback)  # Approx 30 FPS
         self.bridge = CvBridge()
@@ -121,7 +137,7 @@ class ImagePublisher(Node):
         self.right_reader = FFmpegVideoReader(video_path_right)
         self.left_cv_image = np.zeros((self.left_reader.height, self.left_reader.width, 3), dtype=np.uint8)
         self.right_cv_image = np.zeros((self.right_reader.height, self.right_reader.width, 3), dtype=np.uint8)
-    
+
     def get_image(self):
         left_ret, left_frame = self.left_reader.read()
         right_ret, right_frame = self.right_reader.read()
@@ -129,7 +145,12 @@ class ImagePublisher(Node):
             self.left_cv_image = left_frame
         if right_ret and right_frame is not None:
             self.right_cv_image = right_frame
-    
+        # Stereo pair: stop as soon as either stream ends so we never publish a
+        # mismatched (stale-left / new-right) frame. Switch to `and` below if you
+        # prefer to drain both streams fully when their lengths differ.
+        if not left_ret or not right_ret:
+            self.finished = True
+
     def pulish_msg(self):
         self.left_publisher_.publish(self.bridge.cv2_to_imgmsg(np.array(self.left_cv_image), "bgr8"))
         self.right_publisher_.publish(self.bridge.cv2_to_imgmsg(np.array(self.right_cv_image), "bgr8"))
@@ -149,17 +170,22 @@ class ImagePublisher(Node):
 
     def timer_callback(self):
         self.get_image()
+        if self.finished:
+            return
         cv2.imshow("Camera Left", self.left_cv_image)
         cv2.imshow("Camera Right", self.right_cv_image)
-        cv2.waitKey(1)
+        key = cv2.waitKey(1) & 0xFF
+        if key in (27, ord('q')):  # ESC or 'q' -> clean manual quit
+            self.finished = True
+            return
         if self.save_image:
             self.save_snapshot()
         self.pulish_msg()
 
     def run(self):
-        while rclpy.ok():
+        while rclpy.ok() and not self.finished:
             rclpy.spin_once(self)
-    
+
 def main(cfg: Config)-> None:
     _VIDEO_PATH_LEFT, _VIDEO_PATH_RIGHT, (_CAM_WIDTH, _CAM_HEIGHT) = read_config(cfg.config_path)
     rclpy.init(args=None)
@@ -177,14 +203,12 @@ def main(cfg: Config)-> None:
     finally:
         image_publisher.left_reader.close()
         image_publisher.right_reader.close()
+        cv2.destroyAllWindows()
         image_publisher.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
    # python monitor_app/src/camera_sim_node.py --config-path data_configs/monitor_config_port.json
    # python monitor_app/src/camera_sim_node.py --config-path data_configs/monitor_config_pnp.json
-   normalized_argv = [
-       arg.replace("_", "-") if arg.startswith("--") else arg
-       for arg in sys.argv[1:]
-   ]
-   main(tyro.cli(Config, args=normalized_argv))
+   main(tyro.cli(Config))

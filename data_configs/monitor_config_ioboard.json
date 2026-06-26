@@ -1,6 +1,6 @@
 {
-    "video_path_left": "/home/yang/MyRepos/object_detection/videos/episode_000001_left.mp4",
-    "video_path_right": "/home/yang/MyRepos/object_detection/videos/episode_000001_right.mp4",
+    "video_path_left": "/home/yang/MyRepos/object_detection/videos/episode_000059_left.mp4",
+    "video_path_right": "/home/yang/MyRepos/object_detection/videos/episode_000059_right.mp4",
     "image_size": [
         640,
         480

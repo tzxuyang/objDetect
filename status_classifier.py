@@ -8,12 +8,11 @@ from torch.quantization import default_qat_qconfig
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '.')) 
 sys.path.insert(0, os.path.join(project_root, 'src'))
 
-from timm.models import checkpoint
 import tyro 
 import logging
 from PIL import Image
-from dataclasses import dataclass, field, fields, MISSING
-from src.auto_labeling import classifier_autolabel_complex, create_video, batch_label, PassFailDataset
+from dataclasses import dataclass, field, MISSING
+from src.auto_labeling import PassFailDataset
 from src.dino_train import DinoClassifier, set_seed, train_classifier
 from src.utils import pad_vit_input, concat_images
 import json

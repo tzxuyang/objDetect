@@ -10,6 +10,11 @@
 /videos/*.MOV
 /videos/*.parquet
 
+/dataset/images/train/*
+/dataset/images/val/*
+/dataset/labels/train/*
+/dataset/labels/val/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
