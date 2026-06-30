@@ -57,8 +57,10 @@ def vit_predict(
     padding_bbox_right=None,
 ):
     if padding_bbox_left is not None and padding_bbox_left != (0, 0, 0, 0):
+        print(f"Applying padding to left image with bbox: {padding_bbox_left}")
         left_image = pad_vit_input(left_image, bbox=padding_bbox_left)
     if right_image is not None and padding_bbox_right is not None and padding_bbox_right != (0, 0, 0, 0):
+        print(f"Applying padding to right image with bbox: {padding_bbox_right}")
         right_image = pad_vit_input(right_image, bbox=padding_bbox_right)
 
     image = concat_images(left_image, right_image) if right_image is not None else left_image

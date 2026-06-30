@@ -29,6 +29,13 @@ fail_video = ["episode_000004",
               "episode_000017",
               "episode_000018",
               "episode_000059"]
+success_video = ["000050_1",
+                 "000100_1",
+                 "000200_1",
+                 "000300_1"]
+fail_video = ["000350_0",
+              "000400_0",
+              "000450_0"]
 
 _ROOT_DIR = "/home/yang/MyRepos/object_detection/videos"
 _WARNING_TOKEN = "Published monitor warning: True"
@@ -39,6 +46,10 @@ _RUN_TIMEOUT = 30.0  # max seconds to run each episode
 # Flip these if your monitor polarity is the other way around.
 _EXPECT_WARNING_SUCCESS = False
 _EXPECT_WARNING_FAIL = True
+
+_WARNING_FILTER_DURATION_SUCCESS = 2.0  # seconds to filter out repeated warnings 0.2
+_WARNING_FILTER_DURATION_FAIL = 2.0  # seconds to filter out repeated warnings 0.05
+_CONFIG_PATH = "data_configs/monitor_config_p548.json"
 
 
 def update_json(json_file, key, value):
@@ -100,9 +111,9 @@ def run_monitor_camera_nodes(watcher, file_name=None):
     Returns True if monitor_node logged the warning token to /rosout.
     """
     if file_name is not None:
-        update_json("data_configs/monitor_config_ioboard.json",
+        update_json(_CONFIG_PATH,
                     "video_path_left", f'{_ROOT_DIR}/{file_name}_left.mp4')
-        update_json("data_configs/monitor_config_ioboard.json",
+        update_json(_CONFIG_PATH,
                     "video_path_right", f'{_ROOT_DIR}/{file_name}_right.mp4')
 
     watcher.reset()
@@ -111,14 +122,14 @@ def run_monitor_camera_nodes(watcher, file_name=None):
     # to keep the batch output readable (drop these kwargs to see node logs).
     term1 = subprocess.Popen(
         ["uv", "run", "python", "monitor_app/src/monitor_node.py",
-         "--config_path", "data_configs/monitor_config_ioboard.json"],
+         "--config_path", _CONFIG_PATH],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     time.sleep(1)
     term2 = subprocess.Popen(
         ["uv", "run", "python", "monitor_app/src/camera_sim_node.py",
-         "--config_path", "data_configs/monitor_config_ioboard.json"],
+         "--config_path", _CONFIG_PATH],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -165,16 +176,16 @@ if __name__ == "__main__":
     # results: list of (label, name, found, expected, passed)
     results = []
     try:
-        update_json("data_configs/monitor_config_ioboard.json", "warning_filter_duration", 0.2)
+        update_json(_CONFIG_PATH, "warning_filter_duration", _WARNING_FILTER_DURATION_SUCCESS)
         _run_category(watcher, "success", success_video,
                       _EXPECT_WARNING_SUCCESS, results)
-        update_json("data_configs/monitor_config_ioboard.json", "warning_filter_duration", 0.01)
+        update_json(_CONFIG_PATH, "warning_filter_duration", _WARNING_FILTER_DURATION_FAIL)
         _run_category(watcher, "fail", fail_video,
                       _EXPECT_WARNING_FAIL, results)
     finally:
         watcher.destroy_node()
         rclpy.shutdown()
-    update_json("data_configs/monitor_config_ioboard.json", "warning_filter_duration", 0.2)
+    update_json(_CONFIG_PATH, "warning_filter_duration", _WARNING_FILTER_DURATION_SUCCESS)
 
     # ---------------------------- Summary ----------------------------
     print("=" * 80)

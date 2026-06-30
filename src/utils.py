@@ -84,7 +84,7 @@ def pad_vit_input(img, bbox):
     Crops image to bbox, adds padding to make it square, and resizes.
     bbox format: [x_min, y_min, x_max, y_max]
     """
-    if bbox == [-1, -1, -1, -1]:
+    if bbox == (-1, -1, -1, -1) or bbox == [-1, -1, -1, -1]:
         return img
 
     width, height = img.size
