@@ -2,6 +2,8 @@ import json
 import subprocess
 import sys
 import time
+import tyro
+from dataclasses import dataclass
 
 import rclpy
 from rclpy.node import Node
@@ -13,45 +15,9 @@ from rclpy.qos import (
 )
 from rcl_interfaces.msg import Log
 
-# ioboard test
-# _WARNING_FILTER_DURATION_SUCCESS = 0.2  # seconds to filter out repeated warnings 0.2
-# _WARNING_FILTER_DURATION_FAIL = 0.05  # seconds to filter out repeated warnings 0.05
-# _CONFIG_PATH = "data_configs/monitor_config_ioboard.json"
-# success_video = ["episode_000001",
-#                  "episode_000003",
-#                  "episode_000014",
-#                  "episode_000019",
-#                  "episode_000020",
-#                  "episode_000024",
-#                  "episode_000025",
-#                  "episode_000061",
-#                  "episode_000073"]
-# fail_video = ["episode_000004",
-#               "episode_000006",
-#               "episode_000011",
-#               "episode_000015",
-#               "episode_000017",
-#               "episode_000018",
-#               "episode_000059"]
-
-
-# p548 test
-_WARNING_FILTER_DURATION_SUCCESS = 2.0  # seconds to filter out repeated warnings 2.0
-_WARNING_FILTER_DURATION_FAIL = 0.5  # seconds to filter out repeated warnings 0.5
-_CONFIG_PATH = "data_configs/monitor_config_p548.json"
-success_video = ["000050_1",
-                 "000051_1",
-                 "000100_1",
-                 "000101_1",
-                 "000200_1",
-                 "000201_1",
-                 "000300_1",
-                 "000311_1",]
-fail_video = ["000350_0",
-              "000400_0",
-              "000403_0",
-              "000449_0",
-              "000450_0"]
+@dataclass
+class Config:
+    test_case: str
 
 _ROOT_DIR = "/home/yang/MyRepos/object_detection/videos"
 _WARNING_TOKEN = "Published monitor warning: True"
@@ -116,15 +82,15 @@ def _drain(watcher, seconds):
         rclpy.spin_once(watcher, timeout_sec=0.05)
 
 
-def run_monitor_camera_nodes(watcher, file_name=None):
+def run_monitor_camera_nodes(watcher, config_path, file_name=None):
     """Run the monitor + camera nodes for one episode.
 
     Returns True if monitor_node logged the warning token to /rosout.
     """
     if file_name is not None:
-        update_json(_CONFIG_PATH,
+        update_json(config_path,
                     "video_path_left", f'{_ROOT_DIR}/{file_name}_left.mp4')
-        update_json(_CONFIG_PATH,
+        update_json(config_path,
                     "video_path_right", f'{_ROOT_DIR}/{file_name}_right.mp4')
 
     watcher.reset()
@@ -133,14 +99,14 @@ def run_monitor_camera_nodes(watcher, file_name=None):
     # to keep the batch output readable (drop these kwargs to see node logs).
     term1 = subprocess.Popen(
         ["uv", "run", "python", "monitor_app/src/monitor_node.py",
-         "--config_path", _CONFIG_PATH, "--print_logs"],
+         "--config_path", config_path, "--print_logs"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     time.sleep(1)
     term2 = subprocess.Popen(
         ["uv", "run", "python", "monitor_app/src/camera_sim_node.py",
-         "--config_path", _CONFIG_PATH],
+         "--config_path", config_path],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -168,18 +134,59 @@ def run_monitor_camera_nodes(watcher, file_name=None):
     return watcher.found
 
 
-def _run_category(watcher, label, episodes, expect_warning, results):
+def _run_category(watcher, config_path, label, episodes, expect_warning, results):
     for name in episodes:
         print("=" * 80)
         print(f"[{label}] Running episode: {name}  (expect warning={expect_warning})")
-        found = run_monitor_camera_nodes(watcher, name)
+        found = run_monitor_camera_nodes(watcher, config_path, name)
         passed = (found == expect_warning)
         results.append((label, name, found, expect_warning, passed))
         verdict = "PASS" if passed else "FAIL"
         print(f"  -> warning published: {found}  [{verdict}]")
 
+def main(cfg: Config)-> None:
+    test_case = cfg.test_case
 
-if __name__ == "__main__":
+    if test_case == "ioboard":
+        _WARNING_FILTER_DURATION_SUCCESS = 0.2  # seconds to filter out repeated warnings 0.2
+        _WARNING_FILTER_DURATION_FAIL = 0.05  # seconds to filter out repeated warnings 0.05
+        config_path = "data_configs/monitor_config_ioboard.json"
+        success_video = ["episode_000001",
+                         "episode_000003",
+                         "episode_000014",
+                         "episode_000019",
+                         "episode_000020",
+                         "episode_000024",
+                         "episode_000025",
+                         "episode_000061",
+                         "episode_000073"]
+        fail_video = ["episode_000004",
+                      "episode_000006",
+                      "episode_000011",
+                      "episode_000015",
+                      "episode_000017",
+                      "episode_000018",
+                      "episode_000059"]
+    elif test_case == "p548":
+        _WARNING_FILTER_DURATION_SUCCESS = 2.0  # seconds to filter out repeated warnings 2.0
+        _WARNING_FILTER_DURATION_FAIL = 2.0  # seconds to filter out repeated warnings 2.0
+        config_path = "data_configs/monitor_config_p548.json"
+        success_video = ["000050_1",
+                         "000051_1",
+                         "000100_1",
+                         "000101_1",
+                         "000200_1",
+                         "000201_1",
+                         "000300_1",
+                         "000311_1",]
+        fail_video = ["000350_0",
+                      "000400_0",
+                      "000403_0",
+                      "000449_0",
+                      "000450_0"]
+    else:
+        raise ValueError(f"Unknown test_case: {test_case}")
+
     # Run me with `uv run python ...` so rclpy is on the path and the
     # ROS_DOMAIN_ID matches the child node processes (they inherit this env).
     rclpy.init()
@@ -187,16 +194,16 @@ if __name__ == "__main__":
     # results: list of (label, name, found, expected, passed)
     results = []
     try:
-        update_json(_CONFIG_PATH, "warning_filter_duration", _WARNING_FILTER_DURATION_SUCCESS)
-        _run_category(watcher, "success", success_video,
+        update_json(config_path, "warning_filter_duration", _WARNING_FILTER_DURATION_SUCCESS)
+        _run_category(watcher, config_path, "success", success_video,
                       _EXPECT_WARNING_SUCCESS, results)
-        update_json(_CONFIG_PATH, "warning_filter_duration", _WARNING_FILTER_DURATION_FAIL)
-        _run_category(watcher, "fail", fail_video,
+        update_json(config_path, "warning_filter_duration", _WARNING_FILTER_DURATION_FAIL)
+        _run_category(watcher, config_path, "fail", fail_video,
                       _EXPECT_WARNING_FAIL, results)
     finally:
         watcher.destroy_node()
         rclpy.shutdown()
-    update_json(_CONFIG_PATH, "warning_filter_duration", _WARNING_FILTER_DURATION_SUCCESS)
+    update_json(config_path, "warning_filter_duration", _WARNING_FILTER_DURATION_SUCCESS)
 
     # ---------------------------- Summary ----------------------------
     print("=" * 80)
@@ -218,3 +225,6 @@ if __name__ == "__main__":
 
     # Nonzero exit on any mismatch so this can gate CI / scripts.
     sys.exit(1 if num_fail else 0)
+
+if __name__ == "__main__":
+    main(tyro.cli(Config))
