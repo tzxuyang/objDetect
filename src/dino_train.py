@@ -145,9 +145,19 @@ class CustomDataset(Dataset):
         self.data = data
         self.labels = labels # Use torch.long for classification labels
 
+    @staticmethod
+    def _resolve_repo_path(path):
+        if os.path.isabs(path):
+            return path
+
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        return os.path.abspath(os.path.join(repo_root, path))
+
     @classmethod
     def fromDirectory(cls, data_dir, label_dir, transform=None, resize = None, padding_size = (0,0,0,0), weights = None):
         # Load data and labels from a directory
+        data_dir = cls._resolve_repo_path(data_dir)
+        label_dir = cls._resolve_repo_path(label_dir)
         file_list = utils.create_file_list(data_dir)
         data = []
         labels = []
@@ -166,7 +176,8 @@ class CustomDataset(Dataset):
                 img = ImageOps.expand(img, border=(padding_left, padding_top, padding_right, padding_bottom), fill='black')
             if padding_size != (0,0,0,0):
                 img = utils.pad_vit_input(img, bbox=padding_size)
-            label_file = file.replace(data_dir, label_dir).replace('.jpg', '.txt')
+            file_stem = os.path.splitext(os.path.basename(file))[0]
+            label_file = os.path.join(label_dir, f"{file_stem}.txt")
             with open(label_file, 'r') as f:
                 label = int(f.read().strip())
             
@@ -213,7 +224,10 @@ def init_wandb(project_name="dino_classifier", wandb_key=_WANDB_KEY, config=None
 
 def train_model(custom_model, train_loader, val_loader, **kwargs):
     custom_model.to(device)
-    criterion = nn.CrossEntropyLoss()
+    class_weights = kwargs.get('class_weights')
+    if class_weights is not None:
+        class_weights = torch.tensor(class_weights, dtype=torch.float32, device=device)
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     # Adam to optimze the classification hear
     # When using DataParallel, access the underlying module's head parameters
     head_params = custom_model.module.head.parameters() if isinstance(custom_model, nn.DataParallel) else custom_model.head.parameters()
@@ -283,7 +297,7 @@ def extract_model_features(custom_model, test_loader):
             feature_list.append(feature.detach().cpu().numpy())
     return feature_list
 
-def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, class_weights, train_cluster =False, new_size = None, batch_size=_BATCH_SIZE, padding_bbox=(0,0,0,0), lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
+def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, class_weights, train_cluster =False, new_size = None, batch_size=_BATCH_SIZE, lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -314,7 +328,6 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         train_label_directory,
         transform = transforms,
         resize = new_size,
-        padding_size = padding_bbox,
         weights = class_weights,
     )
     transforms = model_owner.get_val_transform()
@@ -323,7 +336,6 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         test_label_directory,
         transform = transforms,
         resize = new_size,
-        padding_size = padding_bbox,
         weights = None,
     )
     logging.info(f"train_dataset size : {int(train_dataset.__len__())}")
@@ -344,7 +356,8 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
     train_config = {
         'learning_rate': lr_max,
         'num_epochs': epoch,
-        'eta_min': lr_min
+        'eta_min': lr_min,
+        'class_weights': class_weights,
     }
     train_model(custom_model, train_loader, val_loader, **train_config)
 

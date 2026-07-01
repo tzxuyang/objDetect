@@ -1,4 +1,7 @@
+import os
+import random
 import shutil
+import subprocess
 import numpy as np
 import io
 from PIL import Image
@@ -12,6 +15,9 @@ from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 import utils
 from utils import create_file_list
 import pandas as pd
+
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "hw_decoders_any;none")
+
 import cv2
 from skimage.metrics import structural_similarity as ssim
 
@@ -183,6 +189,305 @@ class CreateClassDataset:
                 file.write(label_idx)
         except IOError as e:
             print(f"Error writing to file '{file_name}': {e}")
+
+class PassFailDataset:
+    def __init__(
+        self,
+        success_path_left,
+        success_path_right,
+        fail_path_left,
+        fail_path_right,
+        fail_fps,
+        fail_duration,
+        success_fps,
+        left_mask_bbox,
+        right_mask_bbox,
+        val_ratio,
+        output_path,
+    ):
+        self.success_path_left = success_path_left
+        self.success_path_right = success_path_right
+        self.fail_path_left = fail_path_left
+        self.fail_path_right = fail_path_right
+        self.fail_fps = fail_fps
+        self.fail_duration = fail_duration
+        self.success_fps = success_fps
+        self.left_mask_bbox = left_mask_bbox
+        self.right_mask_bbox = right_mask_bbox
+        self.val_ratio = val_ratio
+        self.output_path = output_path
+
+        self.train_success_files_left = []
+        self.train_success_files_right = []
+        self.train_fail_files_left = []
+        self.train_fail_files_right = []
+        self.val_success_files_left = []
+        self.val_success_files_right = []
+        self.val_fail_files_left = []
+        self.val_fail_files_right = []
+
+    def _pair_video_files(self, left_dir, right_dir):
+        left_files = {
+            file_name: os.path.join(left_dir, file_name)
+            for file_name in sorted(os.listdir(left_dir))
+            if file_name.endswith(".mp4")
+        }
+        right_files = {
+            file_name: os.path.join(right_dir, file_name)
+            for file_name in sorted(os.listdir(right_dir))
+            if file_name.endswith(".mp4")
+        }
+
+        common_files = sorted(set(left_files) & set(right_files))
+        if not common_files:
+            raise ValueError(f"No paired mp4 files found in {left_dir} and {right_dir}")
+
+        missing_left = sorted(set(right_files) - set(left_files))
+        missing_right = sorted(set(left_files) - set(right_files))
+        if missing_left:
+            logging.warning("Missing left videos for: %s", missing_left)
+        if missing_right:
+            logging.warning("Missing right videos for: %s", missing_right)
+
+        left_paths = [left_files[file_name] for file_name in common_files]
+        right_paths = [right_files[file_name] for file_name in common_files]
+        return left_paths, right_paths
+
+    def _split_train_val(self, left_files, right_files):
+        if len(left_files) != len(right_files):
+            raise ValueError("left_files and right_files must have the same length")
+
+        val_count = int(len(left_files) * self.val_ratio)
+        if self.val_ratio > 0 and val_count == 0 and left_files:
+            val_count = 1
+    
+        if val_count == 0:
+            return left_files, right_files, [], []
+
+        val_indices = set(random.sample(range(len(left_files)), val_count))
+        train_left_files = []
+        train_right_files = []
+        val_left_files = []
+        val_right_files = []
+
+        for idx, (left_file, right_file) in enumerate(zip(left_files, right_files)):
+            if idx in val_indices:
+                val_left_files.append(left_file)
+                val_right_files.append(right_file)
+            else:
+                train_left_files.append(left_file)
+                train_right_files.append(right_file)
+
+        return train_left_files, train_right_files, val_left_files, val_right_files
+
+    def create_train_val_split(self):
+        success_files_left, success_files_right = self._pair_video_files(
+            self.success_path_left,
+            self.success_path_right,
+        )
+        fail_files_left, fail_files_right = self._pair_video_files(
+            self.fail_path_left,
+            self.fail_path_right,
+        )
+
+        (
+            self.train_success_files_left,
+            self.train_success_files_right,
+            self.val_success_files_left,
+            self.val_success_files_right,
+        ) = self._split_train_val(success_files_left, success_files_right)
+        (
+            self.train_fail_files_left,
+            self.train_fail_files_right,
+            self.val_fail_files_left,
+            self.val_fail_files_right,
+        ) = self._split_train_val(fail_files_left, fail_files_right)
+
+        return (
+            self.train_success_files_left,
+            self.train_success_files_right,
+            self.train_fail_files_left,
+            self.train_fail_files_right,
+            self.val_success_files_left,
+            self.val_success_files_right,
+            self.val_fail_files_left,
+            self.val_fail_files_right,
+        )
+
+    def _get_video_duration(self, video_path):
+        ffprobe_path = shutil.which("ffprobe")
+        if ffprobe_path is None:
+            raise IOError(f"ffprobe is not installed, cannot determine duration: {video_path}")
+
+        command = [
+            ffprobe_path,
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            video_path,
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise IOError(f"Cannot determine video duration: {video_path}") from exc
+
+        duration_text = result.stdout.strip()
+        if not duration_text:
+            raise ValueError(f"Empty duration returned for video: {video_path}")
+
+        return float(duration_text)
+
+    def get_success_duration_fail_episode_ratio(self):
+        if not self.train_success_files_left and not self.train_fail_files_left:
+            self.create_train_val_split()
+
+        fail_episode_count = len(self.train_fail_files_left)
+        if fail_episode_count == 0:
+            raise ValueError("train_fail_files_left is empty, cannot compute ratio")
+
+        success_duration = 0.0
+        for left_video_path in self.train_success_files_left:
+            success_duration += self._get_video_duration(left_video_path)
+
+        return success_duration / fail_episode_count
+
+    def _prepare_split_directories(self, split_name):
+        images_dir = os.path.join(self.output_path, "images", split_name)
+        labels_dir = os.path.join(self.output_path, "labels", split_name)
+
+        for directory in (images_dir, labels_dir):
+            if os.path.isdir(directory) and os.listdir(directory):
+                for entry_name in os.listdir(directory):
+                    entry_path = os.path.join(directory, entry_name)
+                    if os.path.isdir(entry_path):
+                        shutil.rmtree(entry_path)
+                    else:
+                        os.remove(entry_path)
+            os.makedirs(directory, exist_ok=True)
+
+        return images_dir, labels_dir
+
+    def _export_video_pairs(self, left_video_files, right_video_files, fps, label, image_idx, duration, split_name):
+        images_dir = os.path.join(self.output_path, "images", split_name)
+        labels_dir = os.path.join(self.output_path, "labels", split_name)
+        os.makedirs(images_dir, exist_ok=True)
+        os.makedirs(labels_dir, exist_ok=True)
+
+        for left_video_path, right_video_path in zip(left_video_files, right_video_files):
+            left_images = utils.convert_video_to_images(
+                left_video_path,
+                out_fps=fps,
+                duration=duration,
+            )
+            right_images = utils.convert_video_to_images(
+                right_video_path,
+                out_fps=fps,
+                duration=duration,
+            )
+
+            paired_count = min(len(left_images), len(right_images))
+            if paired_count == 0:
+                logging.warning(
+                    "No paired images extracted from %s and %s",
+                    left_video_path,
+                    right_video_path,
+                )
+                continue
+
+            if len(left_images) != len(right_images):
+                logging.warning(
+                    "Frame count mismatch for %s and %s; using %s paired frames",
+                    left_video_path,
+                    right_video_path,
+                    paired_count,
+                )
+
+            for frame_idx in range(paired_count):
+                file_stem = f"{image_idx:09d}"
+                image_path = os.path.join(images_dir, f"{file_stem}.jpeg")
+                label_path = os.path.join(labels_dir, f"{file_stem}.txt")
+                left_image = utils.pad_vit_input(
+                    left_images[frame_idx],
+                    bbox=self.left_mask_bbox,
+                )
+                right_image = utils.pad_vit_input(
+                    right_images[frame_idx],
+                    bbox=self.right_mask_bbox,
+                )
+
+                utils.concat_images(
+                    left_image,
+                    right_image,
+                    save_path=image_path,
+                )
+                with open(label_path, "w", encoding="utf-8") as file:
+                    file.write(str(label))
+
+                image_idx += 1
+
+        return image_idx
+
+    def create_train_classification_dataset(self):
+        if not self.train_success_files_left and not self.train_fail_files_left:
+            self.create_train_val_split()
+
+        self._prepare_split_directories("train")
+        image_idx = 1
+        image_idx = self._export_video_pairs(
+            self.train_success_files_left,
+            self.train_success_files_right,
+            fps=self.success_fps,
+            label=0,
+            image_idx=image_idx,
+            duration=-1,
+            split_name="train",
+        )
+        image_idx = self._export_video_pairs(
+            self.train_fail_files_left,
+            self.train_fail_files_right,
+            fps=self.fail_fps,
+            label=1,
+            image_idx=image_idx,
+            duration=self.fail_duration,
+            split_name="train",
+        )
+
+        return image_idx - 1
+
+    def create_val_classification_dataset(self):
+        if not self.val_success_files_left and not self.val_fail_files_left:
+            self.create_train_val_split()
+
+        self._prepare_split_directories("val")
+        image_idx = 1
+        image_idx = self._export_video_pairs(
+            self.val_success_files_left,
+            self.val_success_files_right,
+            fps=self.success_fps,
+            label=0,
+            image_idx=image_idx,
+            duration=-1,
+            split_name="val",
+        )
+        image_idx = self._export_video_pairs(
+            self.val_fail_files_left,
+            self.val_fail_files_right,
+            fps=self.fail_fps,
+            label=1,
+            image_idx=image_idx,
+            duration=self.fail_duration,
+            split_name="val",
+        )
+
+        return image_idx - 1
 
 @retry(stop_max_attempt_number=5, wait_fixed=100)
 def yolo_autolabel(Labeler, Yolodataset, path, file_name, prompt, max_new_tokens=2048):

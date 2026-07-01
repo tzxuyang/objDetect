@@ -1,0 +1,32 @@
+{
+    "video_path_left": "/home/yang/MyRepos/object_detection/videos/000450_0_left.mp4",
+    "video_path_right": "/home/yang/MyRepos/object_detection/videos/000450_0_right.mp4",
+    "left_camera_msg": "/camera/camera/color/image_rect_left",
+    "right_camera_msg": "/camera/camera/color/image_rect_right",
+    "image_size": [
+        424,
+        240
+    ],
+    "padding_bbox_left": [
+        -1,
+        -1,
+        -1,
+        -1
+    ],
+    "padding_bbox_right": [
+        100,
+        0,
+        324,
+        240
+    ],
+    "class_names": [
+        "success",
+        "fail"
+    ],
+    "warning_filter_duration": 2.0,
+    "recover_filter_duration": 5,
+    "svm_thres": -1.5,
+    "fsm": "MonitorFSM",
+    "train_config_path": "/home/yang/MyRepos/object_detection/data_configs/train_config_p548.json",
+    "duration_thres": 20
+}

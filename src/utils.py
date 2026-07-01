@@ -1,16 +1,56 @@
 import os
 import io
+from contextlib import contextmanager
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import requests
 from io import BytesIO
-from pathlib import Path
 import re
 import transformers
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
+
+os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "hw_decoders_any;none")
+
 import cv2
 import logging
+import shutil
+import subprocess
+
+@contextmanager
+def _suppress_stderr():
+    stderr_fd = os.dup(2)
+    try:
+        with open(os.devnull, "w") as devnull:
+            os.dup2(devnull.fileno(), 2)
+            yield
+    finally:
+        os.dup2(stderr_fd, 2)
+        os.close(stderr_fd)
+
+@contextmanager
+def _suppress_cv2_logging():
+    if not hasattr(cv2, "getLogLevel") or not hasattr(cv2, "setLogLevel"):
+        yield
+        return
+
+    previous_level = cv2.getLogLevel()
+    try:
+        cv2.setLogLevel(0)
+        yield
+    finally:
+        cv2.setLogLevel(previous_level)
+
+def _open_video_capture(video_path):
+    with _suppress_stderr(), _suppress_cv2_logging():
+        try:
+            return cv2.VideoCapture(
+                video_path,
+                cv2.CAP_FFMPEG,
+                [cv2.CAP_PROP_HW_ACCELERATION, cv2.VIDEO_ACCELERATION_NONE],
+            )
+        except TypeError:
+            return cv2.VideoCapture(video_path)
 
 def create_file_list(root_dir):
     dir_contents = os.listdir(root_dir)
@@ -44,6 +84,9 @@ def pad_vit_input(img, bbox):
     Crops image to bbox, adds padding to make it square, and resizes.
     bbox format: [x_min, y_min, x_max, y_max]
     """
+    if bbox == (-1, -1, -1, -1) or bbox == [-1, -1, -1, -1]:
+        return img
+
     width, height = img.size
     
     # 1. Unpack and clamp bbox to image boundaries
@@ -68,6 +111,52 @@ def pad_vit_input(img, bbox):
     padded_img = ImageOps.expand(cropped_img, padding, fill='black')
     
     return padded_img
+
+def concat_images(img1, img2, direction='horizontal', padding=0, bg_color=(0,0,0), save_path=None):
+    """
+    Concatenate two images side-by-side (horizontal) or top-bottom (vertical).
+
+    Args:
+        img1: file path or PIL.Image.Image for the first image.
+        img2: file path or PIL.Image.Image for the second image.
+        direction: 'horizontal' (default) or 'vertical'.
+        padding: pixels between images (default 0).
+        bg_color: background color tuple for padding areas (default black).
+        save_path: if provided, save concatenated image to this path.
+
+    Returns:
+        PIL.Image.Image of the concatenated image.
+    """
+    # Load images if paths are provided
+    im1 = Image.open(img1).convert('RGB') if isinstance(img1, str) else img1.convert('RGB')
+    im2 = Image.open(img2).convert('RGB') if isinstance(img2, str) else img2.convert('RGB')
+
+    w1, h1 = im1.size
+    w2, h2 = im2.size
+
+    if direction == 'horizontal':
+        new_h = max(h1, h2)
+        new_w = w1 + w2 + padding
+        new_img = Image.new('RGB', (new_w, new_h), color=bg_color)
+        y1 = (new_h - h1) // 2
+        y2 = (new_h - h2) // 2
+        new_img.paste(im1, (0, y1))
+        new_img.paste(im2, (w1 + padding, y2))
+    elif direction == 'vertical':
+        new_w = max(w1, w2)
+        new_h = h1 + h2 + padding
+        new_img = Image.new('RGB', (new_w, new_h), color=bg_color)
+        x1 = (new_w - w1) // 2
+        x2 = (new_w - w2) // 2
+        new_img.paste(im1, (x1, 0))
+        new_img.paste(im2, (x2, h1 + padding))
+    else:
+        raise ValueError("direction must be 'horizontal' or 'vertical'")
+
+    if save_path:
+        new_img.save(save_path)
+
+    return new_img
 
 # register_heif_opener()
 def convert_heic_to_jpeg(heic_path, jpeg_path, img_size = (640, 480)):
@@ -171,6 +260,160 @@ def record_video_from_images(df, image_col_name,  fps = 30, output_path = './vid
     # Release the VideoWriter
     out.release()
     logging.info(f"Successfully created video: {video_filename}")
+
+def _extract_video_frames_with_ffmpeg(video_path, out_fps, duration=-1):
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path is None:
+        raise IOError(
+            f"Cannot decode video with OpenCV and ffmpeg is not installed: {video_path}"
+        )
+
+    command = [
+        ffmpeg_path,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-hwaccel",
+        "none",
+    ]
+
+    if duration != -1:
+        command.extend(["-sseof", f"-{duration}"])
+
+    command.extend([
+        "-i",
+        video_path,
+        "-vf",
+        f"fps={out_fps}",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "mjpeg",
+        "-",
+    ])
+
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except OSError as exc:
+        raise IOError(f"ffmpeg failed to extract frames from {video_path}") from exc
+
+    images = []
+    buffer = b""
+    start_marker = b"\xff\xd8"
+    end_marker = b"\xff\xd9"
+
+    while True:
+        chunk = process.stdout.read(1024 * 1024)
+        if not chunk:
+            break
+        buffer += chunk
+
+        while True:
+            start_idx = buffer.find(start_marker)
+            if start_idx == -1:
+                buffer = buffer[-1:] if buffer else b""
+                break
+
+            end_idx = buffer.find(end_marker, start_idx + 2)
+            if end_idx == -1:
+                buffer = buffer[start_idx:]
+                break
+
+            jpeg_bytes = buffer[start_idx:end_idx + 2]
+            buffer = buffer[end_idx + 2:]
+            image = Image.open(BytesIO(jpeg_bytes)).convert("RGB")
+            images.append(image.copy())
+
+    stderr_output = process.stderr.read().decode("utf-8", errors="ignore")
+    return_code = process.wait()
+    if return_code != 0:
+        raise IOError(
+            f"ffmpeg failed to extract frames from {video_path}: {stderr_output.strip()}"
+        )
+
+    return images
+
+def convert_video_to_images(video_path, out_fps=30, duration=1):
+    """
+    Extracts frames from a video and returns them as a list of PIL images.
+
+    Args:
+        video_path (str): Path to the input video file.
+        out_fps (float): Number of frames per second to extract (default: 30).
+        duration (float): Number of seconds from the end of the video to extract.
+            Use -1 to extract the complete video. Default: 1.
+    Returns:
+        list[PIL.Image.Image]: Extracted images in RGB format.
+    """
+    if out_fps <= 0:
+        raise ValueError("out_fps must be > 0")
+    if duration != -1 and duration <= 0:
+        raise ValueError("duration must be > 0 or -1")
+
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path is not None:
+        return _extract_video_frames_with_ffmpeg(
+            video_path,
+            out_fps,
+            duration=duration,
+        )
+
+    cap = _open_video_capture(video_path)
+    if not cap.isOpened():
+        raise IOError(f"Cannot open video file: {video_path}")
+
+    # Get video properties
+    video_fps = cap.get(cv2.CAP_PROP_FPS) or 0
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+
+    if video_fps <= 0 or frame_count <= 0:
+        if duration != -1:
+            cap.release()
+            raise IOError(
+                "Video metadata is unavailable and ffmpeg is not installed, "
+                f"so duration-based extraction cannot be applied: {video_path}"
+            )
+
+        logging.warning(
+            "Video FPS or frame count not available; extracting every frame until EOF"
+        )
+        frame_interval = 1
+    else:
+        frame_interval = max(1, int(round(video_fps / float(out_fps))))
+
+        if duration != -1:
+            video_duration = frame_count / float(video_fps)
+            start_seconds = max(0.0, video_duration - duration)
+            if start_seconds > 0:
+                cap.set(cv2.CAP_PROP_POS_MSEC, start_seconds * 1000.0)
+
+    saved = 0
+    idx = 0
+    images = []
+
+    while True:
+        with _suppress_stderr(), _suppress_cv2_logging():
+            ret, frame = cap.read()
+        if not ret:
+            break
+
+        if idx % frame_interval == 0:
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            images.append(Image.fromarray(rgb_frame))
+            saved += 1
+        idx += 1
+
+    cap.release()
+    if saved == 0:
+        raise IOError(f"No frames decoded from video file: {video_path}")
+
+    logging.info(f"Extracted {saved} frames from {video_path}")
+    return images
 
 if __name__ == "__main__":
     root_dir = "/home/yang/datasets/visual_image"
