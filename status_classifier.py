@@ -1,6 +1,5 @@
 import sys
 import os
-from cv2 import data
 import timm
 from torch.quantization import default_qat_qconfig
 # Get the absolute path to the directory containing 'src'
@@ -121,7 +120,6 @@ if __name__ == "__main__":
     # uv run status_classifier.py --mode train --train_config data_configs/train_config_pnp.json --project_name dino_classifier_177_dinov3_small
         train_config = json.load(open(config.train_config, "r"))
         img_size = (train_config["image_size"][0]*2, train_config["image_size"][1])
-        padding_bbox = (train_config["padding_bbox"][0], train_config["padding_bbox"][1], train_config["padding_bbox"][2], train_config["padding_bbox"][3])
         train_classifier(
             project_name=config.project_name,
             train_file_directory=train_config["train_image"],
@@ -130,7 +128,6 @@ if __name__ == "__main__":
             test_label_directory=train_config["val_label"],
             train_cluster=True,
             new_size=img_size,
-            padding_bbox=padding_bbox,
             class_names=train_config["class_names"],
             class_weights=train_config["class_weights"],
             batch_size=train_config["batch_size"],

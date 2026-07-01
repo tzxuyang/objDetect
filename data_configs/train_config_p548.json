@@ -11,7 +11,6 @@
     "image_size": [424, 240],
     "padding_bbox_left": [-1, -1, -1, -1],
     "padding_bbox_right": [100, 0, 324, 240],
-    "padding_bbox": [0, 0, 0, 0],
     "class_names": ["success", "fail"],
     "class_weights": [1.0, 1.0],
     "batch_size": 2048,

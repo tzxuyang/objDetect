@@ -39,21 +39,18 @@ The autolabel results are stored in a specified dir path in a format used by YOL
 The dinov3 backbone is selected and customized with MLP head. It is then trained with auto-labeled dataset
 Finally the tool can be used to classify the image into predefined labels
 
-* Step 0: image format conversion (optional, only for image token from iphone)
-```
-uv run python src/convert_img.py --root_dir /home/yang/datasets/white_board_image2/
-```
-
-* Step 1.1: autolabel
+* Step 1: autolabel
 ```
 uv run status_classifier.py --mode autolabel --label_config data_configs/train_config_ioboard.json
+uv run status_classifier.py --mode autolabel --label_config data_configs/train_config_p548.json
 ```
 
 * Step 2: train
 Create a train config file such as /data_configs/train_config_port.json under /data/configs. Update the training config and run CLI:
 ```
 # for ioboard classification 
-uv run python status_classifier.py --mode train --train_config data_configs/train_config_ioboard.json --project_name classifier_ioboard_0622
+uv run status_classifier.py --mode train --train_config data_configs/train_config_ioboard.json --project_name classifier_ioboard_0622
+uv run status_classifier.py --mode train --train_config data_configs/train_config_p548.json --project_name classifier_p548_0624
 ```
 The trained checkpoint will be saved in /runs/
 
@@ -62,3 +59,26 @@ The trained checkpoint will be saved in /runs/
 # for ioboard classification
 uv run status_classifier.py --mode predict --train_config data_configs/train_config_ioboard.json --checkpoint ./checkpoints/dino_classifier.pth --image-left ./images/camera_left_000017.jpg --image-right ./images/camera_right_000017.jpg
 ```
+
+# Migration to Monitor/Takeover
+
+* Migrate the object detection monitor related code to https://github.com/FII-AILab/control_arbitrator
+
+* use case dependent
+```
+checkpoints/anormally_detect.pkl -> checkpoints/anormally_detect.pkl
+checkpoints/dino_classifier.pth -> dino_classifier.pth
+data_configs/monitor_config_p548.json -> data_configs/monitor_config_p548.json
+data_configs/monitor_config_ioboard.json -> data_configs/monitor_config_ioboard.json
+```
+
+* src code (independent)
+```
+src/dino_train.py -> control_arbotrator/src/dino_train.py
+src/utils.py -> src/utils.py
+monitor_app/src/camera_sim_node.py -> src/camera_sim_node.py
+monitor_app/src/monitor.py -> src/monitor.py
+monitor_app/src/monitor_node.py -> src/monitor_node.py
+```
+
+

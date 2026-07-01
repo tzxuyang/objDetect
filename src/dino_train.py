@@ -297,7 +297,7 @@ def extract_model_features(custom_model, test_loader):
             feature_list.append(feature.detach().cpu().numpy())
     return feature_list
 
-def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, class_weights, train_cluster =False, new_size = None, batch_size=_BATCH_SIZE, padding_bbox=(0,0,0,0), lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
+def train_classifier(project_name, train_file_directory, train_label_directory, test_file_directory, test_label_directory, class_names, class_weights, train_cluster =False, new_size = None, batch_size=_BATCH_SIZE, lr_max=_LR_init, lr_min=_LR_min, epoch=_EPOCH):
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -328,7 +328,6 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         train_label_directory,
         transform = transforms,
         resize = new_size,
-        padding_size = padding_bbox,
         weights = class_weights,
     )
     transforms = model_owner.get_val_transform()
@@ -337,7 +336,6 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
         test_label_directory,
         transform = transforms,
         resize = new_size,
-        padding_size = padding_bbox,
         weights = None,
     )
     logging.info(f"train_dataset size : {int(train_dataset.__len__())}")

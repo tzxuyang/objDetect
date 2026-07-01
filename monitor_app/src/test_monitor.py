@@ -13,44 +13,55 @@ from rclpy.qos import (
 )
 from rcl_interfaces.msg import Log
 
-success_video = ["episode_000001",
-                 "episode_000003",
-                 "episode_000014",
-                 "episode_000019",
-                 "episode_000020",
-                 "episode_000024",
-                 "episode_000025",
-                 "episode_000061",
-                 "episode_000073"]
-fail_video = ["episode_000004",
-              "episode_000006",
-              "episode_000011",
-              "episode_000015",
-              "episode_000017",
-              "episode_000018",
-              "episode_000059"]
+# ioboard test
+# _WARNING_FILTER_DURATION_SUCCESS = 0.2  # seconds to filter out repeated warnings 0.2
+# _WARNING_FILTER_DURATION_FAIL = 0.05  # seconds to filter out repeated warnings 0.05
+# _CONFIG_PATH = "data_configs/monitor_config_ioboard.json"
+# success_video = ["episode_000001",
+#                  "episode_000003",
+#                  "episode_000014",
+#                  "episode_000019",
+#                  "episode_000020",
+#                  "episode_000024",
+#                  "episode_000025",
+#                  "episode_000061",
+#                  "episode_000073"]
+# fail_video = ["episode_000004",
+#               "episode_000006",
+#               "episode_000011",
+#               "episode_000015",
+#               "episode_000017",
+#               "episode_000018",
+#               "episode_000059"]
+
+
+# p548 test
+_WARNING_FILTER_DURATION_SUCCESS = 2.0  # seconds to filter out repeated warnings 2.0
+_WARNING_FILTER_DURATION_FAIL = 0.5  # seconds to filter out repeated warnings 0.5
+_CONFIG_PATH = "data_configs/monitor_config_p548.json"
 success_video = ["000050_1",
+                 "000051_1",
                  "000100_1",
+                 "000101_1",
                  "000200_1",
-                 "000300_1"]
+                 "000201_1",
+                 "000300_1",
+                 "000311_1",]
 fail_video = ["000350_0",
               "000400_0",
+              "000403_0",
+              "000449_0",
               "000450_0"]
 
 _ROOT_DIR = "/home/yang/MyRepos/object_detection/videos"
 _WARNING_TOKEN = "Published monitor warning: True"
-_RUN_TIMEOUT = 30.0  # max seconds to run each episode
+_RUN_TIMEOUT = 40.0  # max seconds to run each episode
 
 # Expected monitor-warning outcome per category. A warning flags a detected
 # problem, so failed episodes should warn and successful ones should stay clean.
 # Flip these if your monitor polarity is the other way around.
 _EXPECT_WARNING_SUCCESS = False
 _EXPECT_WARNING_FAIL = True
-
-_WARNING_FILTER_DURATION_SUCCESS = 2.0  # seconds to filter out repeated warnings 0.2
-_WARNING_FILTER_DURATION_FAIL = 2.0  # seconds to filter out repeated warnings 0.05
-_CONFIG_PATH = "data_configs/monitor_config_p548.json"
-
 
 def update_json(json_file, key, value):
     with open(json_file, 'r') as f:
@@ -122,7 +133,7 @@ def run_monitor_camera_nodes(watcher, file_name=None):
     # to keep the batch output readable (drop these kwargs to see node logs).
     term1 = subprocess.Popen(
         ["uv", "run", "python", "monitor_app/src/monitor_node.py",
-         "--config_path", _CONFIG_PATH],
+         "--config_path", _CONFIG_PATH, "--print_logs"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )

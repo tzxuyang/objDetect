@@ -1,6 +1,8 @@
 {
     "video_path_left": "/home/yang/MyRepos/object_detection/videos/000450_0_left.mp4",
     "video_path_right": "/home/yang/MyRepos/object_detection/videos/000450_0_right.mp4",
+    "left_camera_msg": "/camera/camera/color/image_rect_left",
+    "right_camera_msg": "/camera/camera/color/image_rect_right",
     "image_size": [
         424,
         240
