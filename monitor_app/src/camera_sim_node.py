@@ -1,3 +1,5 @@
+import rich
+
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -30,8 +32,10 @@ def read_config(config_path):
     monitor_config = json.load(open(config_path, "r"))
     video_path_left = monitor_config.get("video_path_left")
     video_path_right = monitor_config.get("video_path_right")
+    left_camera_msg = monitor_config.get("left_camera_msg")
+    right_camera_msg = monitor_config.get("right_camera_msg")
     img_size = monitor_config.get("image_size")
-    return video_path_left, video_path_right, (img_size[0], img_size[1])
+    return video_path_left, video_path_right, left_camera_msg, right_camera_msg, (img_size[0], img_size[1])
 
 def get_video_size(video_path):
     command = [
@@ -117,10 +121,10 @@ class FFmpegVideoReader:
         self.process = None
 
 class ImagePublisher(Node):
-    def __init__(self, img_size, video_path_left, video_path_right, save_image=False):
+    def __init__(self, img_size, video_path_left, video_path_right, left_camera_msg, right_camera_msg, save_image=False):
         super().__init__('image_publisher')
-        self.left_publisher_ = self.create_publisher(Image, '/camera/camera/color/image_rect_left', 10)
-        self.right_publisher_ = self.create_publisher(Image, '/camera/camera/color/image_rect_right', 10)
+        self.left_publisher_ = self.create_publisher(Image, left_camera_msg, 10)
+        self.right_publisher_ = self.create_publisher(Image, right_camera_msg, 10)
         self.video_path_left = video_path_left
         self.video_path_right = video_path_right
         self.save_image = save_image
@@ -187,12 +191,14 @@ class ImagePublisher(Node):
             rclpy.spin_once(self)
 
 def main(cfg: Config)-> None:
-    _VIDEO_PATH_LEFT, _VIDEO_PATH_RIGHT, (_CAM_WIDTH, _CAM_HEIGHT) = read_config(cfg.config_path)
+    _VIDEO_PATH_LEFT, _VIDEO_PATH_RIGHT, _LEFT_CAMERA_MSG, _RIGHT_CAMERA_MSG, (_CAM_WIDTH, _CAM_HEIGHT) = read_config(cfg.config_path)
     rclpy.init(args=None)
     image_publisher = ImagePublisher(
         img_size=(_CAM_WIDTH, _CAM_HEIGHT),
         video_path_left=_VIDEO_PATH_LEFT,
         video_path_right=_VIDEO_PATH_RIGHT,
+        left_camera_msg = _LEFT_CAMERA_MSG,
+        right_camera_msg = _RIGHT_CAMERA_MSG,
         save_image=cfg.save_image,
     )
     logging.info("Starting image publisher...")
