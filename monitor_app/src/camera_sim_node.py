@@ -2,7 +2,7 @@ import rich
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage
 from cv_bridge import CvBridge
 import os
 import subprocess
@@ -123,8 +123,8 @@ class FFmpegVideoReader:
 class ImagePublisher(Node):
     def __init__(self, img_size, video_path_left, video_path_right, left_camera_msg, right_camera_msg, save_image=False):
         super().__init__('image_publisher')
-        self.left_publisher_ = self.create_publisher(Image, left_camera_msg, 10)
-        self.right_publisher_ = self.create_publisher(Image, right_camera_msg, 10)
+        self.left_publisher_ = self.create_publisher(CompressedImage, left_camera_msg, 10)
+        self.right_publisher_ = self.create_publisher(CompressedImage, right_camera_msg, 10)
         self.video_path_left = video_path_left
         self.video_path_right = video_path_right
         self.save_image = save_image
@@ -156,8 +156,8 @@ class ImagePublisher(Node):
             self.finished = True
 
     def pulish_msg(self):
-        self.left_publisher_.publish(self.bridge.cv2_to_imgmsg(np.array(self.left_cv_image), "bgr8"))
-        self.right_publisher_.publish(self.bridge.cv2_to_imgmsg(np.array(self.right_cv_image), "bgr8"))
+        self.left_publisher_.publish(self.bridge.cv2_to_compressed_imgmsg(np.array(self.left_cv_image), dst_format="jpg"))
+        self.right_publisher_.publish(self.bridge.cv2_to_compressed_imgmsg(np.array(self.right_cv_image), dst_format="jpg"))
         self.get_logger().info('Publishing left and right images')
 
     def save_snapshot(self):

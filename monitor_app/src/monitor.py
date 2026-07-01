@@ -40,7 +40,7 @@ def load_model(checkpoint, class_names):
     data_config = timm.data.resolve_model_data_config(dino_classifier.backbone)
     print(data_config)
     # Load checkpoint onto CPU first to avoid CUDA device-deserialization errors, then move to available device
-    state_dict = torch.load(checkpoint, map_location=torch.device('cpu'))
+    state_dict = torch.load(checkpoint, map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
     dino_classifier.load_state_dict(state_dict)
     dino_classifier.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
     dino_classifier.eval()

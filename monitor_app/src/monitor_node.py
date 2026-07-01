@@ -8,7 +8,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool
 from std_msgs.msg import Int16
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage
 from PIL import Image as PILImage
 from cv_bridge import CvBridge
 from arbitrator_msg.msg import MonitorState
@@ -97,12 +97,12 @@ class MonitorNode(Node):
     ):
         super().__init__('monitor_node')
         self.left_subscription = self.create_subscription(
-            Image,
+            CompressedImage,
             left_camera_msg,
             self.left_image_callback,
             10)
         self.right_subscription = self.create_subscription(
-            Image,
+            CompressedImage,
             right_camera_msg,
             self.right_image_callback,
             10)
@@ -166,7 +166,7 @@ class MonitorNode(Node):
 
     def left_image_callback(self, msg):
         if self.count % _DOWN_SAMPLE_RATE == 0:
-            self.current_left_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+            self.current_left_frame = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
             if self.print_logs and self.current_left_frame is not None:
                 edited_frame = self._image_edit()
                 cv2.imshow("Monitor Frame", edited_frame)
@@ -174,7 +174,7 @@ class MonitorNode(Node):
         self.count += 1
 
     def right_image_callback(self, msg):
-        self.current_right_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        self.current_right_frame = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding='bgr8')
 
     def image_issue(self):
         if self.current_left_frame is None or self.current_right_frame is None:
