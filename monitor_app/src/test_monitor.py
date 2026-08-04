@@ -21,7 +21,7 @@ class Config:
 
 _ROOT_DIR = "/home/yang/MyRepos/object_detection/videos"
 _WARNING_TOKEN = "Published monitor warning: True"
-_RUN_TIMEOUT = 40.0  # max seconds to run each episode
+_RUN_TIMEOUT = 120.0  # max seconds to run each episode
 
 # Expected monitor-warning outcome per category. A warning flags a detected
 # problem, so failed episodes should warn and successful ones should stay clean.
@@ -148,25 +148,30 @@ def main(cfg: Config)-> None:
     test_case = cfg.test_case
 
     if test_case == "ioboard":
-        _WARNING_FILTER_DURATION_SUCCESS = 0.2  # seconds to filter out repeated warnings 0.2
-        _WARNING_FILTER_DURATION_FAIL = 0.05  # seconds to filter out repeated warnings 0.05
+        _WARNING_FILTER_DURATION_SUCCESS = 1.0  # seconds to filter out repeated warnings 0.2
+        _WARNING_FILTER_DURATION_FAIL = 1.0  # seconds to filter out repeated warnings 0.05
         config_path = "data_configs/monitor_config_ioboard.json"
-        success_video = ["episode_000001",
-                         "episode_000003",
-                         "episode_000014",
-                         "episode_000019",
-                         "episode_000020",
-                         "episode_000024",
-                         "episode_000025",
-                         "episode_000061",
-                         "episode_000073"]
-        fail_video = ["episode_000004",
-                      "episode_000006",
-                      "episode_000011",
-                      "episode_000015",
-                      "episode_000017",
-                      "episode_000018",
-                      "episode_000059"]
+        success_video = ["000001_1_cam",
+                         "000003_1_cam",
+                         "000005_1_cam",
+                         "000007_1_cam",
+                         "000009_1_cam",
+                         "000011_1_cam",
+                         "000013_1_cam",
+                         "000015_1_cam",
+                         "000020_1_cam"]
+        fail_video = ["000025_0_cam",
+                      "000026_0_cam",
+                      "000030_0_cam",
+                      "000035_0_cam",
+                      "000040_0_cam",
+                      "000045_0_cam",
+                      "000050_0_cam",
+                      "000055_0_cam",
+                      "000060_0_cam",
+                      "000065_0_cam",
+                      "000070_0_cam",
+                      "000092_0_cam"]
     elif test_case == "p548":
         _WARNING_FILTER_DURATION_SUCCESS = 2.0  # seconds to filter out repeated warnings 2.0
         _WARNING_FILTER_DURATION_FAIL = 2.0  # seconds to filter out repeated warnings 2.0

@@ -16,7 +16,7 @@
     "batch_size": 1024,
     "lr_max": 0.0004,
     "lr_min": 0.00005,
-    "epoch": 100,
+    "epoch": 120,
     "success_fps": 1,
     "fail_fps": 30,
     "fail_duration": 0.5,

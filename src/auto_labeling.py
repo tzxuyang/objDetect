@@ -226,7 +226,20 @@ class PassFailDataset:
         self.val_fail_files_left = []
         self.val_fail_files_right = []
 
+
     def _pair_video_files(self, left_dir, right_dir):
+        def rename_files(file_dir):
+            for file_name in os.listdir(file_dir):
+                if file_name.endswith(".mp4"):
+                    old_path = os.path.join(file_dir, file_name)
+                    new_file_name = file_name.replace("_left", "").replace("_right", "")
+                    new_path = os.path.join(file_dir, new_file_name)
+                    if old_path != new_path:
+                        os.rename(old_path, new_path)
+
+        rename_files(left_dir)
+        rename_files(right_dir)
+
         left_files = {
             file_name: os.path.join(left_dir, file_name)
             for file_name in sorted(os.listdir(left_dir))

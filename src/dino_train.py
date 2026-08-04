@@ -16,6 +16,7 @@ import random
 import numpy as np
 from sklearn import linear_model
 import pickle
+import matplotlib.pyplot as plt
 
 logging.basicConfig(level=logging.INFO)
 
@@ -432,6 +433,12 @@ def train_classifier(project_name, train_file_directory, train_label_directory, 
     if train_cluster:
         clf = linear_model.SGDOneClassSVM(random_state=_SEED, tol=None)
         clf.fit(features[0])
+        distribution = clf.predict(features[0])
+        # create box plot for distribution
+        plt.boxplot(distribution)
+        plt.title("Distribution of Novelty Detection Model Predictions")
+        plt.savefig(f"./runs/cls/{next_folder}/weights/anormally_detect_distribution.png")
+        logging.info(f"Novelty detection model trained with min distribution: {min(distribution)} and max distribution: {max(distribution)}")
         path=f"./runs/cls/{next_folder}/weights/anormally_detect.pkl"
         with open(path, 'wb') as file:
             pickle.dump(clf, file)
